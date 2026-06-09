@@ -1,0 +1,50 @@
+name = "llmgeo"
+main = "src/index.ts"
+compatibility_date = "2025-02-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ===== D1 数据库 =====
+[[d1_databases]]
+binding = "DB"
+database_name = "llmgeo-db"
+database_id = ""
+
+# ===== R2 对象存储（AI素材） =====
+[[r2_buckets]]
+binding = "R2_MEDIA"
+bucket_name = "llmgeo-media"
+
+# ===== Queues（AI生成任务队列） =====
+[[queues.producers]]
+binding = "AI_GENERATE_QUEUE"
+queue = "llmgeo-ai-generate"
+
+[[queues.consumers]]
+queue = "llmgeo-ai-generate"
+max_batch_size = 10
+max_batch_timeout = 30
+max_retries = 3
+dead_letter_queue = "llmgeo-ai-generate-dlq"
+
+# ===== 定时任务 =====
+[triggers]
+crons = [
+  "0 2 * * *",   # 每日凌晨2点：刷新社媒令牌
+  "0 3 * * *",   # 每日凌晨3点：会员到期检测
+  "0 */6 * * *", # 每6小时：AI批量内容生成
+]
+
+# ===== 环境变量 =====
+[vars]
+ENVIRONMENT = "production"
+APP_URL = "https://llmgeo.com"
+JWT_SECRET = ""
+JWT_EXPIRES_IN = "7d"
+AGNES_API_BASE_URL = "https://apihub.agnes-ai.com/v1"
+AGNES_API_KEY = ""
+SITE_NAME = "LLMGEO"
+SITE_DESCRIPTION = "海外GEO排名优化SaaS平台"
+
+# ===== 环境 =====
+[env.staging]
+vars = { ENVIRONMENT = "staging", APP_URL = "https://staging.llmgeo.com" }

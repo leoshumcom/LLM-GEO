@@ -1,0 +1,26 @@
+{
+  "name": "llmgeo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LLMGEO - 海外GEO排名优化SaaS平台",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 migrations apply llmgeo-db",
+    "db:list": "wrangler d1 migrations list llmgeo-db",
+    "db:create": "wrangler d1 create llmgeo-db"
+  },
+  "dependencies": {
+    "hono": "^4.7.0",
+    "@hono/zod-validator": "^0.4.0",
+    "zod": "^3.24.0",
+    "jose": "^5.9.0",
+    "bcryptjs": "^2.4.3",
+    "nanoid": "^5.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "^3.100.0",
+    "@cloudflare/workers-types": "^4.20250201.0",
+    "typescript": "^5.7.0"
+  }
+}
