@@ -1,0 +1,89 @@
+[
+  {
+    "sql": "CREATE INDEX idx_operator_company ON sys_company_operator(company_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_user_role_user ON sys_user_role(user_id, user_type);"
+  },
+  {
+    "sql": "CREATE INDEX idx_user_role_role ON sys_user_role(role_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_keyword_tenant ON company_keyword(tenant_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_keyword_status ON company_keyword(status);"
+  },
+  {
+    "sql": "CREATE INDEX idx_oauth_tenant ON company_social_oauth(tenant_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_oauth_platform ON company_social_oauth(platform);"
+  },
+  {
+    "sql": "CREATE INDEX idx_oauth_expires ON company_social_oauth(token_expires_at);"
+  },
+  {
+    "sql": "CREATE INDEX idx_model_tenant ON ai_model_config(tenant_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_content_tenant ON ai_generate_content(tenant_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_content_status ON ai_generate_content(status);"
+  },
+  {
+    "sql": "CREATE INDEX idx_media_tenant ON ai_media_file(tenant_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_publish_tenant ON publish_record(tenant_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_publish_platform ON publish_record(platform);"
+  },
+  {
+    "sql": "CREATE INDEX idx_publish_status ON publish_record(status);"
+  },
+  {
+    "sql": "CREATE INDEX idx_publish_date ON publish_record(published_at);"
+  },
+  {
+    "sql": "CREATE INDEX idx_order_agent ON finance_order(agent_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_order_tenant ON finance_order(tenant_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_order_status ON finance_order(payment_status);"
+  },
+  {
+    "sql": "CREATE INDEX idx_order_type ON finance_order(order_type);"
+  },
+  {
+    "sql": "CREATE INDEX idx_order_date ON finance_order(created_at);"
+  },
+  {
+    "sql": "CREATE INDEX idx_balance_agent ON agent_balance_log(agent_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_balance_date ON agent_balance_log(created_at);"
+  },
+  {
+    "sql": "CREATE INDEX idx_reservation_tenant ON reservation_form(tenant_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_reservation_agent ON reservation_form(agent_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_reservation_status ON reservation_form(status);"
+  },
+  {
+    "sql": "CREATE INDEX idx_log_user ON system_log(user_id);"
+  },
+  {
+    "sql": "CREATE INDEX idx_log_action ON system_log(action);"
+  },
+  {
+    "sql": "CREATE INDEX idx_log_date ON system_log(created_at);"
+  }
+]

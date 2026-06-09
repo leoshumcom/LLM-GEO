@@ -7,7 +7,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "llmgeo-db"
-database_id = ""
+database_id = "e65056f4-7ae1-4f1c-ac4c-94967875e80b"
 
 # ===== R2 对象存储（AI素材） =====
 [[r2_buckets]]
@@ -19,12 +19,7 @@ bucket_name = "llmgeo-media"
 binding = "AI_GENERATE_QUEUE"
 queue = "llmgeo-ai-generate"
 
-[[queues.consumers]]
-queue = "llmgeo-ai-generate"
-max_batch_size = 10
-max_batch_timeout = 30
-max_retries = 3
-dead_letter_queue = "llmgeo-ai-generate-dlq"
+# Queue consumers 单独部署在 queue-worker 中
 
 # ===== 定时任务 =====
 [triggers]
