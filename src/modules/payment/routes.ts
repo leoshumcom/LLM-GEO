@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env, ApiResponse } from '../../types';
 import { authMiddleware, requireRole } from '../../middleware/auth';
 import { createXunhupayOrder, verifyNotify } from '../../utils/payment';
+import { sendOrderEmail } from '../../utils/email';
 
 export const paymentRouter = new Hono<{ Bindings: Env }>();
 
@@ -160,6 +161,28 @@ paymentRouter.post('/notify', async (c) => {
           updated_at = datetime('now')
          WHERE tenant_id = ?`
       ).bind(pkg, duration, order.tenant_id).run();
+    }
+
+    // 发送支付成功邮件通知（非阻塞）
+    try {
+      const company = await c.env.DB.prepare(
+        `SELECT contact_email, company_name FROM sys_company WHERE tenant_id = ?`
+      ).bind(order.tenant_id).first<{ contact_email: string; company_name: string }>();
+      if (company?.contact_email) {
+        const pkgNames: Record<string, string> = {
+          ai_daily: 'AI 日套餐', ai_monthly: 'AI 月套餐',
+          ai_quarterly: 'AI 季套餐', ai_yearly: 'AI 年套餐',
+        };
+        sendOrderEmail(
+          company.contact_email,
+          orderNo,
+          pkgNames[order.order_type] || order.order_type,
+          `¥${(order.amount / 100).toFixed(2)}`,
+          'paid'
+        );
+      }
+    } catch (emailErr) {
+      console.error('[Payment] Email send error:', emailErr);
     }
 
     console.log(`[Payment] Order ${orderNo} paid successfully`);

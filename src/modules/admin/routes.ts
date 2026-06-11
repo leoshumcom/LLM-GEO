@@ -425,3 +425,80 @@ adminRouter.get('/export/:type', async (c) => {
     return c.json({ success: false, error: '导出失败' }, 500);
   }
 });
+
+// ========== 系统配置管理 ==========
+// GET /api/admin/config - 获取系统配置
+adminRouter.get('/config', async (c) => {
+  try {
+    const items = await c.env.DB.prepare(
+      'SELECT config_key, config_value, description FROM system_config ORDER BY config_key'
+    ).all();
+    return c.json({ success: true, data: items.results || [] });
+  } catch (e) {
+    return c.json({ success: false, error: '获取配置失败' }, 500);
+  }
+});
+
+// PUT /api/admin/config - 更新系统配置
+adminRouter.put('/config', async (c) => {
+  try {
+    const body = await c.req.json<{ configs: Array<{ key: string; value: string }> }>();
+    if (!body.configs || !Array.isArray(body.configs)) {
+      return c.json({ success: false, error: '参数无效' } as ApiResponse, 400);
+    }
+
+    for (const cfg of body.configs) {
+      await c.env.DB.prepare(
+        `UPDATE system_config SET config_value = ?, updated_at = datetime('now') WHERE config_key = ?`
+      ).bind(cfg.value, cfg.key).run();
+
+      // 记录日志
+      await c.env.DB.prepare(
+        `INSERT INTO system_log (id, user_id, user_type, action, target_type, target_id, detail, created_at)
+         VALUES (?, ?, 'admin', 'config_change', 'system_config', ?, ?, datetime('now'))`
+      ).bind(crypto.randomUUID(), c.get('user').userId, cfg.key, `更新 ${cfg.key} = ${cfg.value}`).run();
+    }
+
+    return c.json({ success: true, message: '配置已更新' });
+  } catch (e) {
+    return c.json({ success: false, error: '更新配置失败' } as ApiResponse, 500);
+  }
+});
+
+// ========== 系统操作日志 ==========
+// GET /api/admin/logs
+adminRouter.get('/logs', async (c) => {
+  try {
+    const page = parseInt(c.req.query('page') || '1');
+    const pageSize = Math.min(parseInt(c.req.query('pageSize') || '50'), 100);
+    const offset = (page - 1) * pageSize;
+    const action = c.req.query('action') || '';
+
+    let whereClause = '';
+    const params: any[] = [];
+    if (action) {
+      whereClause = ' WHERE action = ?';
+      params.push(action);
+    }
+
+    const total = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM system_log' + whereClause).bind(...params).first();
+    const items = await c.env.DB.prepare(
+      `SELECT user_id, user_type, action, target_type, target_id, detail, created_at
+       FROM system_log` + whereClause +
+      ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
+    ).bind(...params, pageSize, offset).all();
+
+    return c.json({
+      success: true,
+      data: {
+        items: items.results || [],
+        total: total?.cnt || 0,
+        page, pageSize,
+        totalPages: Math.ceil((total?.cnt || 0) / pageSize)
+      }
+    });
+  } catch (e) {
+    return c.json({ success: false, error: '获取日志失败' }, 500);
+  }
+});
+
