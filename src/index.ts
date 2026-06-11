@@ -11,6 +11,7 @@ import { agentRouter } from './modules/agent/routes';
 import { companyRouter } from './modules/company/routes';
 import { apiRouter } from './modules/api/routes';
 import { dashboardRouter } from './modules/dashboard/routes';
+import { paymentRouter } from './modules/payment/routes';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -38,6 +39,8 @@ app.route('/api/admin', adminRouter);
 app.route('/api/agent', agentRouter);
 app.route('/api/company', companyRouter);
 app.route('/api/dashboard', dashboardRouter);
+app.route('/api/payment', paymentRouter);
+app.route('/payment', paymentRouter);  // 支付成功页和通知回调
 app.route('/api', apiRouter);       // 公开API（社媒回调等）
 
 // ===== 404 处理 =====

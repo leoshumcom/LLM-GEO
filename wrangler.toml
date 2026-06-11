@@ -33,7 +33,7 @@ crons = [
 [vars]
 ENVIRONMENT = "production"
 APP_URL = "https://llmgeo.com"
-JWT_SECRET = ""
+JWT_SECRET = "llmgeo_jwt_dabb379c8ae74b778d5813f1ab9d599c"
 JWT_EXPIRES_IN = "7d"
 AGNES_API_BASE_URL = "https://apihub.agnes-ai.com/v1"
 AGNES_API_KEY = ""
