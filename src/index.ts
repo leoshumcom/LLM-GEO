@@ -13,6 +13,8 @@ import { dashboardRouter } from './modules/dashboard/routes';
 import { paymentRouter } from './modules/payment/routes';
 // 管理后台页面路由
 import { pagesRouter } from './pages/routes';
+// Queue 消费者
+import queueConsumer from './worker/queue-consumer';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -40,8 +42,8 @@ app.route('/api/agent', agentRouter);
 app.route('/api/company', companyRouter);
 app.route('/api/dashboard', dashboardRouter);
 app.route('/api/payment', paymentRouter);
-app.route('/payment', paymentRouter);  // 支付成功页和通知回调
-app.route('/api', apiRouter);       // 公开API（社媒回调等）
+app.route('/payment', paymentRouter);
+app.route('/api', apiRouter);
 
 // ===== 管理后台页面 =====
 app.route('/', pagesRouter);
@@ -57,4 +59,8 @@ app.onError((err, c) => {
   return c.json({ success: false, error: 'Internal Server Error' }, 500);
 });
 
-export default app;
+// ===== 导出：将 Hono 的 fetch 和 Queue consumer 合并导出 =====
+export default {
+  fetch: app.fetch,
+  queue: queueConsumer.queue,
+};
