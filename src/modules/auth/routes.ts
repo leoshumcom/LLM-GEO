@@ -147,14 +147,11 @@ authRouter.post('/register', async (c) => {
     // 插入企业记录
     // membership 一年 (365天)
     // AI 免费试用天数从 system_config 读取（默认 7 天）
-    const trialDays = await c.env.DB.prepare(
-      `SELECT config_value FROM system_config WHERE config_key = 'ai_free_trial_days'`
-    ).first<{ config_value: string }>();
-    const freeTrialDays = parseInt(trialDays?.config_value || '7');
-
+    // 所有企业自助注册免费试用 3 天
+    // 会员永久有效（3650天≈10年），AI套餐3天试用
     await c.env.DB.prepare(
       `INSERT INTO sys_company (id, tenant_id, company_name, brand_name, website, contact_email, contact_phone, password_hash, registration_type, registration_fee, membership_expires_at, ai_package_type, ai_package_expires_at, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'self', 168800, datetime('now', '+365 days'), 'daily', datetime('now', '+${freeTrialDays} days'), 'active', datetime('now'), datetime('now'))`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'self', 0, datetime('now', '+3650 days'), 'daily', datetime('now', '+3 days'), 'active', datetime('now'), datetime('now'))`
     ).bind(
       userId, tenantId, companyName, brandName || companyName,
       website || '', email, phone || '', passwordHash

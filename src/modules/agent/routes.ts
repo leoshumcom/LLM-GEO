@@ -125,15 +125,10 @@ agentRouter.post('/companies', async (c) => {
       return c.json({ success: false, error: '代理商余额不足，请先充值' }, 400);
     }
 
-    // 扣减余额并创建企业（赠送 AI 免费试用 + 365天会员）
-    const trialDays = await c.env.DB.prepare(
-      `SELECT config_value FROM system_config WHERE config_key = 'ai_free_trial_days'`
-    ).first<{ config_value: string }>();
-    const freeTrialDays = parseInt(trialDays?.config_value || '7');
-
+    // 扣减余额并创建企业（赠送 AI 免费试用 3天 + 永久会员）
     await c.env.DB.prepare(
       `INSERT INTO sys_company (id, agent_id, tenant_id, company_name, brand_name, website, contact_email, contact_phone, registration_type, registration_fee, membership_expires_at, ai_package_type, ai_package_expires_at, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'agent', ?, datetime('now', '+365 days'), 'daily', datetime('now', '+${freeTrialDays} days'), 'active', datetime('now'), datetime('now'))`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'agent', ?, datetime('now', '+3650 days'), 'daily', datetime('now', '+3 days'), 'active', datetime('now'), datetime('now'))`
     ).bind(userId, user.userId, tenantId, companyName, brandName || companyName, website || '', email, phone || '', fee).run();
 
     // 扣余额
@@ -223,7 +218,7 @@ agentRouter.get('/balance/log', async (c) => {
 agentRouter.post('/recharge', async (c) => {
   try {
     const user = c.get('user');
-    const { amount } = await c.req.json();
+    const { amount, label } = await c.req.json();
     
     if (!amount || amount <= 0) {
       return c.json({ success: false, error: '充值金额须大于0' }, 400);
@@ -231,15 +226,20 @@ agentRouter.post('/recharge', async (c) => {
 
     const orderId = crypto.randomUUID();
     const orderNo = 'AR' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 6).toUpperCase();
-    const description = '代理商余额充值 ' + (amount / 100).toFixed(2) + '元';
+    
+    // 判断是否高级续费（¥18,888 → 到账 ¥26,888）
+    const isPremium = amount === 1888800;
+    const actualAmount = isPremium ? 268800 : amount;
+    const description = isPremium ? '高级续费 ¥18,888（到账 ¥26,888）' : '续费充值 ' + (label || (amount / 100).toFixed(2) + '元');
 
-    // 创建本地订单
+    // 创建本地订单（记录实际到账金额）
     await c.env.DB.prepare(
       `INSERT INTO finance_order (id, order_no, order_type, amount, payment_status, agent_id, description, created_at, updated_at)
        VALUES (?, ?, 'agent_recharge', ?, 'pending', ?, ?, datetime('now'), datetime('now'))`
-    ).bind(orderId, orderNo, amount, user.userId, description).run();
+    ).bind(orderId, orderNo, actualAmount, user.userId, description).run();
 
-    // 调用虎皮椒支付
+    // 调用虎皮椒支付（按实际支付金额收费）
+    const payAmount = isPremium ? 1888800 : amount;
     const { createXunhupayOrder } = await import('../../utils/payment');
     const notifyUrl = c.env.APP_URL + '/api/agent/payment/notify';
     const returnUrl = c.env.APP_URL + '/agent/balance?order_no=' + orderNo;
@@ -247,8 +247,8 @@ agentRouter.post('/recharge', async (c) => {
 
     const payResult = await createXunhupayOrder({
       trade_order_id: orderNo,
-      total_fee: (amount / 100).toFixed(2),
-      title: 'LLMGEO 代理商余额充值',
+      total_fee: (payAmount / 100).toFixed(2),
+      title: 'LLMGEO ' + (isPremium ? '高级续费' : '代理商充值'),
       description: description,
       time: now,
       notify_url: notifyUrl,

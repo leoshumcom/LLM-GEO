@@ -15,12 +15,10 @@ paymentRouter.post('/create', authMiddleware, requireRole('company'), async (c) 
     const { packageType } = await c.req.json<{ packageType: string }>();
 
     // 套餐定价
-    const packages: Record<string, { name: string; price: number; type: 'ai' | 'enterprise' }> = {
-      ai_daily: { name: 'AI 日套餐', price: 66, type: 'ai' },
-      ai_monthly: { name: 'AI 月套餐', price: 666, type: 'ai' },
-      ai_quarterly: { name: 'AI 季套餐', price: 1688, type: 'ai' },
-      ai_yearly: { name: 'AI 年套餐', price: 5888, type: 'ai' },
-      enterprise_yearly: { name: '企业版年费', price: 1688, type: 'enterprise' },
+    const packages: Record<string, { name: string; price: number }> = {
+      enterprise_self: { name: '企业自助版', price: 1688 },
+      agent_standard: { name: '代理商版', price: 8888 },
+      agent_premium: { name: '高级代理商版', price: 18888 },
     };
 
     const pkg = packages[packageType];
@@ -138,54 +136,98 @@ paymentRouter.post('/notify', async (c) => {
       `UPDATE finance_order SET payment_status = 'paid', paid_at = datetime('now'), transaction_id = ?, updated_at = datetime('now') WHERE id = ?`
     ).bind(payOrderId || '', order.id).run();
 
-    // 根据套餐类型更新
-    const pkgTypeMap: Record<string, string> = {
-      ai_daily: '+1 days',
-      ai_monthly: '+30 days',
-      ai_quarterly: '+90 days',
-      ai_yearly: '+365 days',
-      enterprise_yearly: '+365 days',
-    };
-    const pkgNameMap: Record<string, string> = {
-      ai_daily: 'daily',
-      ai_monthly: 'monthly',
-      ai_quarterly: 'quarterly',
-      ai_yearly: 'yearly',
-      enterprise_yearly: '', // 企业版不修改 ai_package_type
-    };
-
-    const duration = pkgTypeMap[order.order_type];
-    const pkg = pkgNameMap[order.order_type];
-
-    if (order.order_type === 'enterprise_yearly') {
-      // 企业版年费：延长 membership_expires_at
+    // 根据套餐类型处理
+    if (order.order_type === 'enterprise_self') {
+      // 企业自助版：永久会员（+3650天），不改变身份
       await c.env.DB.prepare(
         `UPDATE sys_company SET
-          membership_expires_at = COALESCE(
-            CASE WHEN membership_expires_at > datetime('now')
-              THEN datetime(membership_expires_at, ?)
-              ELSE datetime('now', ?)
-            END,
-            datetime('now', ?)
-          ),
+          membership_expires_at = datetime('now', '+3650 days'),
           updated_at = datetime('now')
          WHERE tenant_id = ?`
-      ).bind(duration, duration, duration, order.tenant_id).run();
-    } else if (duration && pkg) {
-      // AI 套餐：延长 ai_package_expires_at（累加）
-      await c.env.DB.prepare(
-        `UPDATE sys_company SET
-          ai_package_type = ?,
-          ai_package_expires_at = COALESCE(
-            CASE WHEN ai_package_expires_at > datetime('now')
-              THEN datetime(ai_package_expires_at, ?)
-              ELSE datetime('now', ?)
-            END,
-            datetime('now', ?)
-          ),
-          updated_at = datetime('now')
-         WHERE tenant_id = ?`
-      ).bind(pkg, duration, duration, duration, order.tenant_id).run();
+      ).bind(order.tenant_id).run();
+    } else if (order.order_type === 'agent_standard') {
+      // 代理商版：升级为代理商 + 充值 ¥8,888 余额
+      // 1. 查找企业邮箱
+      const company = await c.env.DB.prepare(
+        `SELECT id, company_name, contact_email, contact_phone FROM sys_company WHERE tenant_id = ?`
+      ).bind(order.tenant_id).first<{ id: string; company_name: string; contact_email: string; contact_phone: string }>();
+
+      if (company) {
+        // 创建代理商账户（如果不存在）
+        const existingAgent = await c.env.DB.prepare(
+          `SELECT id, balance FROM sys_agent WHERE email = ?`
+        ).bind(company.contact_email).first<{ id: string; balance: number }>();
+
+        if (existingAgent) {
+          // 已有代理商 → 充值余额
+          const newBalance = existingAgent.balance + 888800;
+          await c.env.DB.prepare(
+            `UPDATE sys_agent SET balance = ?, updated_at = datetime('now') WHERE id = ?`
+          ).bind(newBalance, existingAgent.id).run();
+        } else {
+          // 创建新代理商
+          const agentId = crypto.randomUUID();
+          await c.env.DB.prepare(
+            `INSERT INTO sys_agent (id, email, company_name, phone, balance, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 888800, 'active', datetime('now'), datetime('now'))`
+          ).bind(agentId, company.contact_email, company.company_name, company.contact_phone || '').run();
+
+          // 分配代理商角色
+          await c.env.DB.prepare(
+            `INSERT INTO sys_user_role (id, user_id, user_type, role_id, created_at)
+             VALUES (?, ?, 'agent', 'role_agent', datetime('now'))`
+          ).bind(crypto.randomUUID(), agentId).run();
+
+          // 记录余额变动日志
+          await c.env.DB.prepare(
+            `INSERT INTO agent_balance_log (id, agent_id, order_id, change_amount, balance_before, balance_after, operation_type, description, created_at)
+             VALUES (?, ?, ?, 888800, 0, 888800, 'recharge', ?, datetime('now'))`
+          ).bind(crypto.randomUUID(), agentId, order.id, '代理商版套餐购买: ' + orderNo).run();
+        }
+
+        // 企业端：设为代理商标识
+        await c.env.DB.prepare(
+          `UPDATE sys_company SET registration_type = 'agent', membership_expires_at = datetime('now', '+3650 days'), updated_at = datetime('now') WHERE tenant_id = ?`
+        ).bind(order.tenant_id).run();
+      }
+    } else if (order.order_type === 'agent_premium') {
+      // 高级代理商版：升级为代理商 + 充值 ¥26,888（= 18888 + 8000 赠金）
+      const company = await c.env.DB.prepare(
+        `SELECT id, company_name, contact_email, contact_phone FROM sys_company WHERE tenant_id = ?`
+      ).bind(order.tenant_id).first<{ id: string; company_name: string; contact_email: string; contact_phone: string }>();
+
+      if (company) {
+        const existingAgent = await c.env.DB.prepare(
+          `SELECT id, balance FROM sys_agent WHERE email = ?`
+        ).bind(company.contact_email).first<{ id: string; balance: number }>();
+
+        if (existingAgent) {
+          const newBalance = existingAgent.balance + 268800;
+          await c.env.DB.prepare(
+            `UPDATE sys_agent SET balance = ?, updated_at = datetime('now') WHERE id = ?`
+          ).bind(newBalance, existingAgent.id).run();
+        } else {
+          const agentId = crypto.randomUUID();
+          await c.env.DB.prepare(
+            `INSERT INTO sys_agent (id, email, company_name, phone, balance, status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 268800, 'active', datetime('now'), datetime('now'))`
+          ).bind(agentId, company.contact_email, company.company_name, company.contact_phone || '').run();
+
+          await c.env.DB.prepare(
+            `INSERT INTO sys_user_role (id, user_id, user_type, role_id, created_at)
+             VALUES (?, ?, 'agent', 'role_agent', datetime('now'))`
+          ).bind(crypto.randomUUID(), agentId).run();
+
+          await c.env.DB.prepare(
+            `INSERT INTO agent_balance_log (id, agent_id, order_id, change_amount, balance_before, balance_after, operation_type, description, created_at)
+             VALUES (?, ?, ?, 268800, 0, 268800, 'recharge', ?, datetime('now'))`
+          ).bind(crypto.randomUUID(), agentId, order.id, '高级代理商版套餐购买: ' + orderNo).run();
+        }
+
+        await c.env.DB.prepare(
+          `UPDATE sys_company SET registration_type = 'agent', membership_expires_at = datetime('now', '+3650 days'), updated_at = datetime('now') WHERE tenant_id = ?`
+        ).bind(order.tenant_id).run();
+      }
     }
 
     // 发送支付成功邮件通知（非阻塞）

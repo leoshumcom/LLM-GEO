@@ -764,3 +764,126 @@ adminRouter.put('/reservations/:id', async (c) => {
   }
 });
 
+// ========== AI 加油包管理 ==========
+// POST /api/admin/company/:tenantId/ai-package - 为企业开通 AI 加油包
+adminRouter.post('/company/:tenantId/ai-package', async (c) => {
+  try {
+    const user = c.get('user');
+    const tenantId = c.req.param('tenantId');
+    const { packageType } = await c.req.json<{ packageType: 'daily' | 'monthly' | 'yearly' }>();
+
+    const durations: Record<string, string> = {
+      daily: '+1 days',
+      monthly: '+30 days',
+      yearly: '+365 days',
+    };
+    const duration = durations[packageType];
+    if (!duration) {
+      return c.json({ success: false, error: '无效套餐类型（daily/monthly/yearly）' }, 400);
+    }
+
+    // 查找企业
+    const company = await c.env.DB.prepare(
+      `SELECT id, company_name FROM sys_company WHERE tenant_id = ?`
+    ).bind(tenantId).first<{ id: string; company_name: string }>();
+
+    if (!company) {
+      return c.json({ success: false, error: '企业不存在' }, 404);
+    }
+
+    // 延长 AI 加油包有效期
+    await c.env.DB.prepare(
+      `UPDATE sys_company SET
+        ai_package_type = ?,
+        ai_package_expires_at = COALESCE(
+          CASE WHEN ai_package_expires_at > datetime('now')
+            THEN datetime(ai_package_expires_at, ?)
+            ELSE datetime('now', ?)
+          END,
+          datetime('now', ?)
+        ),
+        updated_at = datetime('now')
+       WHERE tenant_id = ?`
+    ).bind(packageType, duration, duration, duration, tenantId).run();
+
+    // 记录日志
+    const pkgNames: Record<string, string> = { daily: '日套餐', monthly: '月套餐', yearly: '年套餐' };
+    await c.env.DB.prepare(
+      `INSERT INTO system_log (id, user_id, user_type, action, target_type, target_id, detail, created_at)
+       VALUES (?, ?, 'admin', 'ai_package_grant', 'company', ?, ?, datetime('now'))`
+    ).bind(crypto.randomUUID(), user.userId, tenantId, `为企业 ${company.company_name} 开通AI加油包（${pkgNames[packageType] || packageType}）`).run();
+
+    return c.json({ success: true, message: `AI 加油包（${pkgNames[packageType] || packageType}）已开通` });
+  } catch (e: any) {
+    return c.json({ success: false, error: '开通失败：' + (e.message || '未知错误') }, 500);
+  }
+});
+
+// GET /api/admin/ai-package-config - 获取加油包定价
+adminRouter.get('/ai-package-config', async (c) => {
+  try {
+    const items = await c.env.DB.prepare(
+      `SELECT config_key, config_value, description FROM system_config WHERE config_key LIKE 'ai_package_%'`
+    ).all();
+
+    // 默认值
+    const defaults: Record<string, string> = {
+      ai_package_daily: '600',
+      ai_package_monthly: '12000',
+      ai_package_yearly: '120000',
+    };
+
+    const results = items.results || [];
+    const configs = ['ai_package_daily', 'ai_package_monthly', 'ai_package_yearly'].map(key => {
+      const existing = results.find((r: any) => r.config_key === key);
+      return {
+        config_key: key,
+        config_value: existing?.config_value || defaults[key] || '0',
+        description: existing?.description || (key === 'ai_package_daily' ? 'AI加油包日套餐价格（分）' : key === 'ai_package_monthly' ? 'AI加油包月套餐价格（分）' : 'AI加油包年套餐价格（分）'),
+      };
+    });
+
+    return c.json({ success: true, data: configs });
+  } catch (e) {
+    return c.json({ success: false, error: '获取配置失败' }, 500);
+  }
+});
+
+// PUT /api/admin/ai-package-config - 更新加油包定价
+adminRouter.put('/ai-package-config', async (c) => {
+  try {
+    const user = c.get('user');
+    const body = await c.req.json<{ configs: Array<{ key: string; value: string }> }>();
+    if (!body.configs || !Array.isArray(body.configs)) {
+      return c.json({ success: false, error: '参数无效' }, 400);
+    }
+
+    for (const cfg of body.configs) {
+      // UPSERT: 如果存在则更新，否则插入
+      const existing = await c.env.DB.prepare(
+        `SELECT config_key FROM system_config WHERE config_key = ?`
+      ).bind(cfg.key).first();
+
+      if (existing) {
+        await c.env.DB.prepare(
+          `UPDATE system_config SET config_value = ?, updated_at = datetime('now') WHERE config_key = ?`
+        ).bind(cfg.value, cfg.key).run();
+      } else {
+        await c.env.DB.prepare(
+          `INSERT INTO system_config (config_key, config_value, description, created_at, updated_at)
+           VALUES (?, ?, 'AI加油包价格配置', datetime('now'), datetime('now'))`
+        ).bind(cfg.key, cfg.value).run();
+      }
+
+      await c.env.DB.prepare(
+        `INSERT INTO system_log (id, user_id, user_type, action, target_type, target_id, detail, created_at)
+         VALUES (?, ?, 'admin', 'ai_package_price_change', 'system_config', ?, ?, datetime('now'))`
+      ).bind(crypto.randomUUID(), user.userId, cfg.key, `调整AI加油包定价 ${cfg.key} = ${cfg.value}`).run();
+    }
+
+    return c.json({ success: true, message: '加油包定价已更新' });
+  } catch (e: any) {
+    return c.json({ success: false, error: '更新失败：' + (e.message || '未知错误') }, 500);
+  }
+});
+

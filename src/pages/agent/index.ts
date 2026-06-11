@@ -198,14 +198,24 @@ export function agentBalancePage(agent: any): string {
 
 <div class="card">
   <h3>充值</h3>
-  <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;">
-    <div class="form-group" style="flex:1;min-width:200px;">
-      <label>充值金额（元）</label>
-      <input type="number" id="rechargeAmount" value="1000" min="100" step="100">
+  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">续费后账户余额自动累加，支持微信/支付宝扫码支付</p>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:240px;border:2px solid #374151;border-radius:12px;padding:24px;text-align:center;transition:all .2s;cursor:pointer;" onmouseover="this.style.borderColor='#7c3aed'" onmouseout="this.style.borderColor='#374151'" onclick="recharge(888800, '\u6807\u51c6\u7eed\u8d39')">
+      <div style="font-size:28px;margin-bottom:8px;">🔄</div>
+      <h3 style="font-size:18px;margin-bottom:8px;">标准续费</h3>
+      <div style="font-size:32px;font-weight:700;color:#a78bfa;margin:12px 0;">¥8,888</div>
+      <p style="color:#9ca3af;font-size:13px;">到账余额 ¥8,888</p>
+      <button class="btn btn-primary" style="width:100%;margin-top:12px;justify-content:center;" onclick="event.stopPropagation();recharge(888800, '\u6807\u51c6\u7eed\u8d39')">立即续费</button>
     </div>
-    <button class="btn btn-primary" onclick="recharge()">💰 去充值</button>
+    <div style="flex:1;min-width:240px;border:2px solid #dc2626;border-radius:12px;padding:24px;text-align:center;position:relative;transition:all .2s;cursor:pointer;" onmouseover="this.style.borderColor='#ff4444'" onmouseout="this.style.borderColor='#dc2626'" onclick="recharge(1888800, '\u9ad8\u7ea7\u7eed\u8d39')">
+      <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#dc2626;color:#fff;padding:4px 16px;border-radius:20px;font-size:12px;font-weight:600;">🔥 推荐</div>
+      <div style="font-size:28px;margin-bottom:8px;">👑</div>
+      <h3 style="font-size:18px;margin-bottom:8px;">高级续费</h3>
+      <div style="font-size:32px;font-weight:700;color:#f87171;margin:12px 0;">¥18,888</div>
+      <p style="color:#9ca3af;font-size:13px;">到账余额 <strong style="color:#10b981;">¥26,888</strong>（赠 ¥8,000）</p>
+      <button class="btn btn-danger" style="width:100%;margin-top:12px;justify-content:center;" onclick="event.stopPropagation();recharge(1888800, '\u9ad8\u7ea7\u7eed\u8d39')">立即续费</button>
+    </div>
   </div>
-  <p style="color:#6b7280;font-size:13px;margin-top:8px;">最低充值 ¥100，支持微信/支付宝</p>
 </div>
 
 <div class="card">
@@ -228,12 +238,11 @@ async function loadLog() {
   document.getElementById('totalSpent').textContent = '¥' + (totalConsumed / 100).toFixed(2);
 }
 
-async function recharge() {
-  const amount = parseInt(document.getElementById('rechargeAmount').value);
-  if (!amount || amount < 100) return showToast('最低充值 ¥100', 'error');
+async function recharge(totalAmount, label) {
   const btn = event.target;
+  const amount = totalAmount;
   btn.disabled = true; btn.textContent = '⏳ 创建订单...';
-  const r = await api('/agent/recharge', { method: 'POST', body: JSON.stringify({ amount: amount * 100 }) });
+  const r = await api('/agent/recharge', { method: 'POST', body: JSON.stringify({ amount, label }) });
   if (r.success) {
     if (r.data?.payUrl) {
       // 显示支付弹窗
