@@ -24,7 +24,7 @@ app.use('*', cors({
 }));
 
 // ===== 健康检查 =====
-app.get('/', (c) => {
+app.get('/api/health', (c) => {
   return c.json({
     success: true,
     message: 'LLMGEO API is running',

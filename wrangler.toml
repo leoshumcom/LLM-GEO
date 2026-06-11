@@ -3,6 +3,12 @@ main = "src/index.ts"
 compatibility_date = "2025-02-01"
 compatibility_flags = ["nodejs_compat"]
 
+# ===== 静态资源 =====
+[assets]
+directory = "public"
+binding = "ASSETS"
+not_found_handling = "proxy"  # 让Hono处理404（API路径）
+
 # ===== D1 数据库 =====
 [[d1_databases]]
 binding = "DB"
