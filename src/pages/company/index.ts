@@ -13,6 +13,10 @@ const NAV = `
 <a href="/company/publish" data-nav="publish">📤 发布记录</a>
 <a href="/company/sites" data-nav="sites">🌐 站群发布</a>
 <a href="/company/social" data-nav="social">🔗 社媒 & 渠道</a>
+<div style="font-size:11px;color:#6b7280;padding:8px 20px 4px;text-transform:uppercase;letter-spacing:1px;">🌍 海外社媒</div>
+<a href="/company/social?tab=overseas" style="padding-left:36px;font-size:13px;">Twitter / Facebook / LinkedIn / Instagram / TikTok / YouTube / Pinterest / Telegram / Medium / Blogger</a>
+<div style="font-size:11px;color:#6b7280;padding:8px 20px 4px;text-transform:uppercase;letter-spacing:1px;">🇨🇳 国内社媒</div>
+<a href="/company/social?tab=domestic" style="padding-left:36px;font-size:13px;">小红书 / 微博 / 微信 / B站 / 知乎 / 抖音</a>
 <a href="/company/reservations" data-nav="reservations">📋 增值预约</a>
 <a href="/company/ai-config" data-nav="ai_config">⚙️ 模型配置</a>
 <a href="/company/profile" data-nav="profile">🏢 企业资料</a>
@@ -40,11 +44,17 @@ export function companyDashboardPage(user: any, stats: any): string {
 </div>
 
 <div class="card">
+  <h3>📊 发布量趋势（近7天）</h3>
+  <div id="publish-trend" style="min-height:80px;"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
+</div>
+
+<div class="card">
   <h3>快速操作</h3>
   <div style="display:flex;gap:12px;flex-wrap:wrap;">
     <a href="/company/keywords" class="btn btn-primary">➕ 添加关键词</a>
     <a href="/company/ai" class="btn btn-success">🤖 AI 生成内容</a>
     <a href="/company/social" class="btn btn-outline">🔗 绑定社媒</a>
+    <a href="/company/publish" class="btn btn-outline">🔗 外链集合</a>
   </div>
 </div>
 
@@ -55,6 +65,29 @@ export function companyDashboardPage(user: any, stats: any): string {
 
 <script>
 (async () => {
+  // 发布趋势
+  const pr = await api('/company/publish?pageSize=100');
+  if (pr.success) {
+    const items = pr.data.items || [];
+    // 按日期统计
+    const trend = {};
+    const dayNames = {0:'周日',1:'周一',2:'周二',3:'周三',4:'周四',5:'周五',6:'周六'};
+    items.forEach(i => {
+      if (i.published_at) {
+        const d = new Date(i.published_at);
+        const key = d.toLocaleDateString('zh-CN');
+        trend[key] = (trend[key] || 0) + 1;
+      }
+    });
+    const entries = Object.entries(trend).sort((a,b) => a[0].localeCompare(b[0])).slice(-7);
+    document.getElementById('publish-trend').innerHTML = entries.length
+      ? '<div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">' +
+        entries.map(([date, count]) => '<div style="text-align:center;"><div style="background:#2563eb;width:40px;height:' + (Math.max(20, count * 25)) + 'px;border-radius:4px 4px 0 0;margin:0 auto;"></div><div style="font-size:13px;font-weight:600;margin-top:4px;">' + count + '</div><div style="font-size:11px;color:#6b7280;">' + date.slice(5) + '</div></div>').join('') +
+        '</div>'
+      : '<div class="empty"><p>暂无发布数据</p></div>';
+  }
+
+  // 最近生成
   const r = await api('/company/ai/generate?pageSize=5');
   if (r.success && r.data.items.length > 0) {
     document.getElementById('recent-contents').innerHTML = '<table><tr><th>关键词</th><th>状态</th><th>时间</th></tr>' +
@@ -417,6 +450,10 @@ export function companySocialPage(user: any): string {
       <button class="btn btn-outline" onclick="showBrowserLogin('bilibili')">📺 B站</button>
       <button class="btn btn-outline" onclick="showBrowserLogin('zhihu')">❓ 知乎</button>
       <button class="btn btn-outline" onclick="showBrowserLogin('douyin')">🎶 抖音</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('pinterest')">📌 Pinterest</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('telegram')">✈️ Telegram</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('medium')">📝 Medium</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('blogger')">📓 Blogger</button>
     </div>
     <div id="browser-login-area" style="display:none;margin-top:16px;">
       <div style="background:#f9fafb;border-radius:8px;padding:20px;text-align:center;border:1px dashed #d1d5db;">
@@ -515,13 +552,13 @@ function switchTab(tab) {
 
 function showBrowserLogin(platform) {
   browserPlatform = platform;
-  const names = { twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音' };
+  const names = { twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音', pinterest: 'Pinterest', telegram: 'Telegram', medium: 'Medium', blogger: 'Blogger' };
   document.getElementById('browserLoginHint').textContent = '请在新窗口登录您的 ' + (names[platform] || platform) + ' 账号，完成验证后点击「已登录，确认保存」。';
   document.getElementById('browser-login-area').style.display = 'block';
 }
 
 async function startBrowserLogin() {
-  const names = { twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音' };
+  const names = { twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音', pinterest: 'Pinterest', telegram: 'Telegram', medium: 'Medium', blogger: 'Blogger' };
   showToast('正在打开 ' + (names[browserPlatform] || browserPlatform) + ' 登录页面...', 'info');
   // 这里后续对接浏览器模拟登录服务
   // 当前为演示流程：用户手动登录后，调用 confirmCookieSaved
@@ -530,7 +567,7 @@ async function startBrowserLogin() {
 
 async function confirmCookieSaved() {
   if (!browserPlatform) return showToast('请先选择一个平台', 'error');
-  const names = { twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音' };
+  const names = { twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音', pinterest: 'Pinterest', telegram: 'Telegram', medium: 'Medium', blogger: 'Blogger' };
   const r = await api('/company/social/channel', {
     method: 'POST',
     body: JSON.stringify({
@@ -586,12 +623,14 @@ async function loadChannels() {
   const channelIcons = {
     wordpress: '🌐', custom_api: '🔌', manual_copy: '📋',
     twitter: '🐦', facebook: '📘', linkedin: '💼', instagram: '📷', tiktok: '🎵', youtube: '▶️',
-    xiaohongshu: '📕', weibo: '📢', wechat: '💬', bilibili: '📺', zhihu: '❓', douyin: '🎶'
+    xiaohongshu: '📕', weibo: '📢', wechat: '💬', bilibili: '📺', zhihu: '❓', douyin: '🎶',
+    pinterest: '📌', telegram: '✈️', medium: '📝', blogger: '📓'
   };
   const channelNames = {
     wordpress: 'WordPress', custom_api: '自定义 API', manual_copy: '手动复制',
     twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube',
-    xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音'
+    xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音',
+    pinterest: 'Pinterest', telegram: 'Telegram', medium: 'Medium', blogger: 'Blogger'
   };
 
   document.getElementById('channel-list').innerHTML = items.length
@@ -1075,7 +1114,10 @@ export function companyAiConfigPage(user: any): string {
     <span class="badge badge-info">豆包</span>
     <span class="badge badge-info">通义千问</span>
     <span class="badge badge-info">ChatGPT</span>
+    <span class="badge badge-info">Gemini</span>
     <span class="badge badge-info">Agnes</span>
+    <span class="badge badge-info">元宝</span>
+    <span class="badge badge-info">Grok</span>
   </div>
 </div>
 
@@ -1095,6 +1137,8 @@ export function companyAiConfigPage(user: any): string {
       <option value="tongyi">通义千问</option>
       <option value="chatgpt">ChatGPT</option>
       <option value="gemini">Gemini</option>
+      <option value="yuanbao">元宝</option>
+      <option value="grok">Grok</option>
     </select>
   </div>
   <div class="form-group">
@@ -1117,7 +1161,7 @@ async function loadModelConfigs() {
   const r = await api('/company/ai/config');
   if (!r.success) return;
   const items = r.data;
-  const providerNames = { agnes: 'Agnes AI', deepseek: 'DeepSeek', doubao: '豆包', tongyi: '通义千问', chatgpt: 'ChatGPT', gemini: 'Gemini' };
+  const providerNames = { agnes: 'Agnes AI', deepseek: 'DeepSeek', doubao: '豆包', tongyi: '通义千问', chatgpt: 'ChatGPT', gemini: 'Gemini', yuanbao: '元宝', grok: 'Grok' };
   document.getElementById('model-config-list').innerHTML = items.length
     ? '<table><tr><th>厂商</th><th>模型</th><th>API 地址</th><th>状态</th><th>操作</th></tr>' +
       items.map(i => '<tr><td>' + (providerNames[i.provider] || i.provider) + '</td><td>' + (i.model_name || '-') + '</td><td>' + (i.api_base_url || '默认') + '</td><td>' + '${statusBadge('active')}' + '</td><td><button class="btn btn-danger btn-sm" onclick="deleteModel(\'' + i.provider + '\')">删除</button></td></tr>').join('') + '</table>'
@@ -1181,7 +1225,7 @@ export function companyReservationsPage(user: any): string {
   const body = `
 <div class="card">
   <h3>📋 增值服务预约</h3>
-  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">需要更深入的服务？提交预约，我们将与您联系。费用 ¥6.00/次（代理商代开自动抵扣）。</p>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">需要更深入的服务？提交预约并支付 ¥6.00，完成后我们将与您联系。</p>
   <form onsubmit="submitReservation(event)" style="max-width:500px;">
     <div class="form-group">
       <label>服务类型</label>
@@ -1214,7 +1258,7 @@ export function companyReservationsPage(user: any): string {
         <input type="text" id="svcTime" placeholder="如：工作日上午">
       </div>
     </div>
-    <button type="submit" class="btn btn-primary">提交预约</button>
+    <button type="submit" class="btn btn-primary">提交预约并支付 ¥6</button>
   </form>
 </div>
 
@@ -1223,7 +1267,26 @@ export function companyReservationsPage(user: any): string {
   <div id="reservation-history"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
 </div>
 
+<!-- 支付弹窗 -->
+<div class="modal-overlay" id="payResModal">
+  <div class="modal" style="max-width:420px;">
+    <h3>💰 支付预约费 ¥6.00</h3>
+    <div id="payResContent" style="text-align:center;padding:16px 0;">
+      <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">扫码支付 ¥6.00</p>
+      <div id="payResQrcode"></div>
+      <div id="payResUrl" style="margin-top:12px;"></div>
+    </div>
+    <div class="actions">
+      <button class="btn btn-success" onclick="checkResPayment()">我已支付，验证</button>
+      <button class="btn btn-outline" onclick="closePayResModal()">关闭</button>
+    </div>
+  </div>
+</div>
+
 <script>
+let currentResOrderNo = '';
+let currentResPaymentCheckCount = 0;
+
 async function submitReservation(e) {
   e.preventDefault();
   const btn = e.target.querySelector('button');
@@ -1239,10 +1302,56 @@ async function submitReservation(e) {
       expectedTime: document.getElementById('svcTime').value,
     })
   });
-  if (r.success) { showToast('预约已提交，我们会尽快联系您！'); e.target.reset(); loadReservations(); }
-  else showToast(r.error || '提交失败', 'error');
-  btn.disabled = false; btn.textContent = '提交预约';
+  if (r.success) {
+    if (r.data?.payUrl) {
+      // 显示支付弹窗
+      currentResOrderNo = r.data.orderNo;
+      document.getElementById('payResQrcode').innerHTML = r.data.qrcode
+        ? '<img src="' + r.data.qrcode + '" style="width:180px;height:180px;border:1px solid #e5e7eb;border-radius:8px;">'
+        : '';
+      document.getElementById('payResUrl').innerHTML = '<a href="' + r.data.payUrl + '" target="_blank" class="btn btn-success" style="justify-content:center;">🔗 去支付</a>';
+      document.getElementById('payResModal').classList.add('show');
+      showToast('预约已提交，请完成 ¥6 支付');
+    } else {
+      showToast('预约已提交，我们会尽快联系您！');
+    }
+    e.target.reset();
+    loadReservations();
+  } else {
+    showToast(r.error || '提交失败', 'error');
+  }
+  btn.disabled = false; btn.textContent = '提交预约并支付 ¥6';
 }
+
+function closePayResModal() {
+  document.getElementById('payResModal').classList.remove('show');
+  currentResOrderNo = '';
+  currentResPaymentCheckCount = 0;
+}
+
+async function checkResPayment() {
+  if (!currentResOrderNo) return showToast('未找到订单', 'error');
+  currentResPaymentCheckCount++;
+  const r = await api('/payment/status/' + currentResOrderNo);
+  if (r.success && r.data?.payment_status === 'paid') {
+    showToast('✅ 支付成功！我们会尽快联系您！');
+    closePayResModal();
+    loadReservations();
+  } else {
+    if (currentResPaymentCheckCount < 5) {
+      showToast('支付尚未确认，请稍后再试 (尝试 ' + currentResPaymentCheckCount + '/5)', 'info');
+    } else {
+      showToast('支付确认失败，请联系客服', 'error');
+      closePayResModal();
+    }
+  }
+}
+
+const SERVICE_TYPE_NAMES = {
+  '1': '关键词研究与拓展', '2': '竞争对手GEO分析', '3': 'AI内容策略定制',
+  '4': '多媒体内容制作', '5': '站群架构规划', '6': '外链建设服务',
+  '7': '数据报告与优化建议', '8': '专属客户经理'
+};
 
 async function loadReservations() {
   const r = await api('/company/reservations');
@@ -1250,8 +1359,8 @@ async function loadReservations() {
   const items = r.data?.items || [];
   const statusBadges = { pending: '<span class="badge badge-warning">待处理</span>', contacted: '<span class="badge badge-info">已联系</span>', completed: '<span class="badge badge-success">已完成</span>', cancelled: '<span class="badge badge-danger">已取消</span>' };
   document.getElementById('reservation-history').innerHTML = items.length
-    ? '<table><tr><th>服务类型</th><th>联系人</th><th>状态</th><th>提交时间</th><th>操作</th></tr>' +
-      items.map(i => '<tr><td>' + '${JSON.stringify(SERVICE_TYPES)}'[i.service_type]?.slice(0, 30) + '...' + '</td><td>' + i.applicant_name + '</td><td>' + (statusBadges[i.status] || i.status) + '</td><td>' + formatDate(i.created_at) + '</td><td>' +
+    ? '<table><tr><th>服务类型</th><th>联系人</th><th>状态</th><th>支付</th><th>提交时间</th><th>操作</th></tr>' +
+      items.map(i => '<tr><td>' + (SERVICE_TYPE_NAMES[i.service_type] || '类型' + i.service_type) + '</td><td>' + i.applicant_name + '</td><td>' + (statusBadges[i.status] || i.status) + '</td><td>' + (i.payment_status === 'paid' ? '<span class="badge badge-success">已支付</span>' : '<span class="badge badge-warning">待支付</span>') + '</td><td>' + formatDate(i.created_at) + '</td><td>' +
         (i.status === 'pending' ? '<button class="btn btn-danger btn-sm" onclick="cancelRes(\'' + i.id + '\')">取消</button>' : '-') + '</td></tr>').join('') + '</table>'
     : '<div class="empty"><p>暂无预约记录，请在上方提交</p></div>';
 }

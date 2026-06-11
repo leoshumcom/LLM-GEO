@@ -2,6 +2,18 @@ import { Hono } from 'hono';
 import type { Env, ApiResponse } from '../../types';
 import { authMiddleware, requireRole, tenantIsolationMiddleware, generateToken } from '../../middleware/auth';
 
+// 服务类型中文名称映射
+const SERVICE_TYPE_NAMES: Record<string, string> = {
+  '1': '关键词研究与拓展',
+  '2': '竞争对手GEO分析',
+  '3': 'AI内容策略定制',
+  '4': '多媒体内容制作',
+  '5': '站群架构规划',
+  '6': '外链建设服务',
+  '7': '数据报告与优化建议',
+  '8': '专属客户经理',
+};
+
 export const companyRouter = new Hono<{ Bindings: Env }>();
 
 companyRouter.use('*', authMiddleware);
@@ -483,7 +495,7 @@ companyRouter.get('/publish', async (c) => {
 
 // ========== 增值预约 ==========
 
-// POST /api/company/reservations - 提交增值服务预约
+// POST /api/company/reservations - 提交增值服务预约（需支付 ¥6）
 companyRouter.post('/reservations', async (c) => {
   try {
     const user = c.get('user');
@@ -497,16 +509,110 @@ companyRouter.post('/reservations', async (c) => {
     }
 
     const id = crypto.randomUUID();
+    const reservationFee = 600; // ¥6 in 分
+
+    // 创建预约记录（支付状态 pending）
     await c.env.DB.prepare(
       `INSERT INTO reservation_form
-       (id, tenant_id, service_type, applicant_name, contact, requirement, people_count, expected_contact_time, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', datetime('now'), datetime('now'))`
+       (id, tenant_id, service_type, applicant_name, contact, requirement, people_count, expected_contact_time, payment_status, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 'pending', datetime('now'), datetime('now'))`
     ).bind(id, user.tenantId, serviceType, applicantName, contact,
       requirement || '', peopleCount || '', expectedTime || '').run();
 
-    return c.json({ success: true, data: { id }, message: '预约已提交' });
+    // 创建虎皮椒支付订单
+    const orderNo = 'RES' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 4).toUpperCase();
+    const orderId = crypto.randomUUID();
+
+    await c.env.DB.prepare(
+      `INSERT INTO finance_order (id, order_no, order_type, amount, payment_status, tenant_id, description, created_at, updated_at)
+       VALUES (?, ?, 'reservation', ?, 'pending', ?, ?, datetime('now'), datetime('now'))`
+    ).bind(orderId, orderNo, reservationFee, user.tenantId,
+      '增值预约 ¥6 - ' + (SERVICE_TYPE_NAMES[serviceType] || '服务' + serviceType)).run();
+
+    // 关联订单ID到预约
+    await c.env.DB.prepare(
+      `UPDATE reservation_form SET order_id = ?, updated_at = datetime('now') WHERE id = ?`
+    ).bind(orderId, id).run();
+
+    // 调用虎皮椒支付
+    const { createXunhupayOrder } = await import('../../utils/payment');
+    const notifyUrl = c.env.APP_URL + '/api/company/reservations/payment/notify';
+    const returnUrl = c.env.APP_URL + '/company/reservations';
+    const now = Math.floor(Date.now() / 1000).toString();
+
+    const payResult = await createXunhupayOrder({
+      trade_order_id: orderNo,
+      total_fee: '6.00',
+      title: 'LLMGEO 增值预约服务',
+      description: SERVICE_TYPE_NAMES[serviceType] || '增值服务预约',
+      time: now,
+      notify_url: notifyUrl,
+      return_url: returnUrl,
+    });
+
+    if (!payResult.success) {
+      await c.env.DB.prepare(
+        `UPDATE finance_order SET payment_status = 'failed', updated_at = datetime('now') WHERE id = ?`
+      ).bind(orderId).run();
+      return c.json({ success: false, error: payResult.error || '支付创建失败', data: { id, orderNo } } as ApiResponse, 400);
+    }
+
+    return c.json({
+      success: true,
+      data: {
+        id,
+        orderNo,
+        payUrl: payResult.url,
+        qrcode: payResult.qrcode,
+        amount: 6,
+      },
+      message: '预约已提交，请完成 ¥6 支付'
+    });
   } catch (e: any) {
+    console.error('[Company] Reservation error:', e);
     return c.json({ success: false, error: '提交预约失败' } as ApiResponse, 500);
+  }
+});
+
+// 预约支付回调通知
+companyRouter.post('/reservations/payment/notify', async (c) => {
+  try {
+    const formData = await c.req.formData();
+    const params: Record<string, string> = {};
+    for (const [key, value] of formData.entries()) {
+      params[key] = value.toString();
+    }
+
+    console.log('[Reservation Payment] Notify:', JSON.stringify({ ...params, hash: params.hash?.substring(0, 8) + '...' }));
+
+    const { verifyNotify } = await import('../../utils/payment');
+    const result = await verifyNotify(params);
+    if (!result.valid) return c.text('sign_error');
+
+    const orderNo = result.trade_order_id;
+    if (!orderNo) return c.text('param_error');
+
+    const order = await c.env.DB.prepare(
+      `SELECT id, payment_status FROM finance_order WHERE order_no = ? AND order_type = 'reservation'`
+    ).first<{ id: string; payment_status: string }>();
+
+    if (!order) return c.text('order_not_found');
+    if (order.payment_status === 'paid') return c.text('success');
+
+    // 更新订单状态
+    await c.env.DB.prepare(
+      `UPDATE finance_order SET payment_status = 'paid', paid_at = datetime('now'), transaction_id = ?, updated_at = datetime('now') WHERE id = ?`
+    ).bind(result.orderId || '', order.id).run();
+
+    // 更新预约工单支付状态
+    await c.env.DB.prepare(
+      `UPDATE reservation_form SET payment_status = 'paid', updated_at = datetime('now') WHERE order_id = ?`
+    ).bind(order.id).run();
+
+    return c.text('success');
+  } catch (e: any) {
+    console.error('[Reservation Payment] Error:', e.message);
+    return c.text('error');
   }
 });
 
@@ -522,7 +628,7 @@ companyRouter.get('/reservations', async (c) => {
       `SELECT COUNT(*) as cnt FROM reservation_form WHERE tenant_id = ?`
     ).bind(user.tenantId).first();
     const items = await c.env.DB.prepare(
-      `SELECT id, service_type, applicant_name, contact, requirement, people_count, status, admin_notes, created_at, updated_at
+      `SELECT id, service_type, applicant_name, contact, requirement, people_count, payment_status, status, admin_notes, created_at, updated_at
        FROM reservation_form WHERE tenant_id = ?
        ORDER BY created_at DESC LIMIT ? OFFSET ?`
     ).bind(user.tenantId, pageSize, offset).all();
@@ -581,7 +687,7 @@ companyRouter.get('/operators', async (c) => {
   }
 });
 
-// POST /api/company/operators - 创建运营子账号
+// POST /api/company/operators - 创建运营子账号（上限10人）
 companyRouter.post('/operators', async (c) => {
   try {
     const user = c.get('user');
@@ -600,6 +706,15 @@ companyRouter.post('/operators', async (c) => {
 
     if (!company) {
       return c.json({ success: false, error: '企业不存在' } as ApiResponse, 404);
+    }
+
+    // 检查当前子账号数量（上限10人）
+    const operatorCount = await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM sys_company_operator WHERE company_id = ?`
+    ).bind(company.id).first<{ cnt: number }>();
+
+    if (operatorCount && operatorCount.cnt >= 10) {
+      return c.json({ success: false, error: '子账号数量已达上限（10人），请先删除不再使用的账号' } as ApiResponse, 400);
     }
 
     // 密码哈希
@@ -721,7 +836,8 @@ companyRouter.post('/social/channel', async (c) => {
 
     const validPlatforms = ['wordpress', 'custom_api', 'manual_copy',
       'twitter', 'facebook', 'linkedin', 'instagram', 'tiktok', 'youtube',
-      'xiaohongshu', 'weibo', 'wechat', 'bilibili', 'zhihu', 'douyin'];
+      'xiaohongshu', 'weibo', 'wechat', 'bilibili', 'zhihu', 'douyin',
+      'pinterest', 'telegram', 'medium', 'blogger'];
     if (!validPlatforms.includes(platform)) {
       return c.json({ success: false, error: '无效平台类型，仅支持: wordpress, custom_api, manual_copy' } as ApiResponse, 400);
     }

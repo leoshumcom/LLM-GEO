@@ -144,8 +144,8 @@ async function loadComps() {
   if (!r.success) return;
   const data = r.data;
   document.getElementById('comp-table').innerHTML = data.items.length
-    ? '<table><tr><th>企业名称</th><th>品牌</th><th>邮箱</th><th>会员到期</th><th>AI套餐</th><th>操作</th></tr>' +
-      data.items.map(i => '<tr><td>' + (i.company_name || '-') + '</td><td>' + (i.brand_name || '-') + '</td><td>' + (i.contact_email || '-') + '</td><td>' + (i.membership_expires_at ? new Date(i.membership_expires_at).toLocaleDateString() : '-') + '</td><td>' + (i.ai_package_type || '-') + '</td><td><button class="btn btn-sm btn-danger" onclick="showToast(\'功能开发中\')">停用</button></td></tr>').join('') + '</table>'
+    ? '<table><tr><th>企业名称</th><th>品牌</th><th>邮箱</th><th>会员到期</th><th>AI套餐</th><th>状态</th><th>操作</th></tr>' +
+      data.items.map(i => '<tr><td>' + (i.company_name || '-') + '</td><td>' + (i.brand_name || '-') + '</td><td>' + (i.contact_email || '-') + '</td><td>' + (i.membership_expires_at ? new Date(i.membership_expires_at).toLocaleDateString() : '-') + '</td><td>' + (i.ai_package_type || '-') + '</td><td>' + (i.status === 'refund_pending' ? '<span class="badge badge-warning">退款中</span>' : '<span class="badge badge-success">正常</span>') + '</td><td><button class="btn btn-sm btn-outline" onclick="requestRefund(\'' + i.id + '\',\'' + i.company_name + '\')">申请退款</button></td></tr>').join('') + '</table>'
     : '<div class="empty"><p>暂无名下企业</p></div>';
   
   if (data.totalPages > 1) {
@@ -169,6 +169,13 @@ async function createCompany2() {
   const r = await api('/agent/companies', { method: 'POST', body: JSON.stringify({ companyName: name, brandName: brand, email, password }) });
   if (r.success) { showToast('企业创建成功'); closeModal2(); loadComps(); }
   else showToast(r.error || '创建失败', 'error');
+}
+
+async function requestRefund(id, name) {
+  if (!confirm('确定申请注销企业「' + name + '」并退款？创建超过7天的企业无法退款。')) return;
+  const r = await api('/agent/companies/' + id + '/refund', { method: 'POST' });
+  if (r.success) { showToast('退款申请已提交，等待管理员审核'); loadComps(); }
+  else showToast(r.error || '申请失败', 'error');
 }
 
 loadComps();
@@ -224,9 +231,32 @@ async function loadLog() {
 async function recharge() {
   const amount = parseInt(document.getElementById('rechargeAmount').value);
   if (!amount || amount < 100) return showToast('最低充值 ¥100', 'error');
-  const r = await api('/agent/balance/recharge', { method: 'POST', body: JSON.stringify({ amount: amount * 100 }) });
-  if (r.success && r.data?.payUrl) { window.open(r.data.payUrl, '_blank'); loadLog(); }
-  else showToast(r.error || '充值失败', 'error');
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '⏳ 创建订单...';
+  const r = await api('/agent/recharge', { method: 'POST', body: JSON.stringify({ amount: amount * 100 }) });
+  if (r.success) {
+    if (r.data?.payUrl) {
+      // 显示支付弹窗
+      const payHtml = '<div style="text-align:center;padding:20px;">' +
+        (r.data.qrcode ? '<img src="' + r.data.qrcode + '" style="width:200px;height:200px;border:1px solid #e5e7eb;border-radius:8px;"><p style="font-size:14px;color:#6b7280;margin-top:8px;">扫码支付</p>' : '') +
+        '<p style="margin-top:12px;"><a href="' + r.data.payUrl + '" target="_blank" class="btn btn-success" style="justify-content:center;">🔗 去支付</a></p>' +
+        '<p style="font-size:13px;color:#6b7280;margin-top:8px;">支付完成后请等待几秒，系统自动到账</p></div>';
+      const div = document.createElement('div');
+      div.innerHTML = '<div class="modal-overlay show" id="payModal"><div class="modal"><h3>充值 ' + (amount / 100).toFixed(2) + ' 元</h3>' + payHtml + '<div class="actions"><button class="btn btn-primary" onclick="closePayModal()">已完成支付</button><button class="btn btn-outline" onclick="closePayModal()">取消</button></div></div></div>';
+      document.body.appendChild(div);
+    }
+    showToast('充值订单已创建');
+    loadLog();
+  } else {
+    showToast(r.error || '充值失败', 'error');
+  }
+  btn.disabled = false; btn.textContent = '💰 去充值';
+}
+
+function closePayModal() {
+  const m = document.getElementById('payModal');
+  if (m) m.parentElement.removeChild(m);
+  loadLog();
 }
 
 loadLog();

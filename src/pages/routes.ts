@@ -8,6 +8,7 @@
 
 import { Hono } from 'hono';
 import type { Env, JwtPayload } from '../types';
+import { registerPage, loginPage, faviconHandler } from './public/index';
 import { authMiddleware, requireRole } from '../middleware/auth';
 // 企业端页面
 import {
@@ -41,9 +42,19 @@ import {
   adminReservationsPage,
   adminConfigPage,
   adminLogsPage,
+  adminRefundsPage,
 } from './admin/index';
 
 export const pagesRouter = new Hono<{ Bindings: Env }>();
+
+// ===== 公开页面（无需登录） =====
+pagesRouter.get('/register', async (c) => {
+  return c.html(registerPage());
+});
+
+pagesRouter.get('/login', async (c) => {
+  return c.html(loginPage());
+});
 
 // ===== 数据注入中间件（获取用户/企业/代理商数据） =====
 async function getUserData(db: D1Database, user: JwtPayload): Promise<any> {
@@ -211,4 +222,8 @@ pagesRouter.get('/admin/config', authMiddleware, requireRole('admin'), async (c)
 
 pagesRouter.get('/admin/logs', authMiddleware, requireRole('admin'), async (c) => {
   return c.html(adminLogsPage());
+});
+
+pagesRouter.get('/admin/refunds', authMiddleware, requireRole('admin'), async (c) => {
+  return c.html(adminRefundsPage());
 });

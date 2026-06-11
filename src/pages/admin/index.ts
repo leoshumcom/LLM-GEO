@@ -10,6 +10,7 @@ const NAV = `
 <a href="/admin/companies" data-nav="companies">🏢 企业管理</a>
 <a href="/admin/agents" data-nav="agents">🤝 代理商管理</a>
 <a href="/admin/finance" data-nav="finance">💰 财务</a>
+<a href="/admin/refunds" data-nav="refunds">🔄 退款管理</a>
 <a href="/admin/reservations" data-nav="reservations">📅 预约管理</a>
 <a href="/admin/config" data-nav="config">⚙️ 配置</a>
 <a href="/admin/logs" data-nav="logs">📜 日志</a>
@@ -97,6 +98,7 @@ export function adminCompaniesPage(): string {
     <div style="display:flex;gap:8px;">
       <select id="statusFilter" onchange="loadComps()"><option value="">全部状态</option><option value="active">正常</option><option value="frozen">冻结</option><option value="refund_pending">退款中</option></select>
       <select id="regFilter" onchange="loadComps()"><option value="">全部注册方式</option><option value="self">自主注册</option><option value="agent">代理开通</option></select>
+      <button class="btn btn-outline btn-sm" onclick="exportCsv('companies')">📥 导出CSV</button>
     </div>
   </div>
   <div class="search-bar"><input type="text" id="searchInput" placeholder="搜索企业名称、品牌、邮箱..." oninput="loadComps()"></div>
@@ -114,7 +116,11 @@ async function loadComps() {
   const data = r.data;
   document.getElementById('comp-table').innerHTML = data.items.length
     ? '<table><tr><th>企业</th><th>品牌</th><th>邮箱</th><th>会员到期</th><th>AI套餐</th><th>状态</th><th>操作</th></tr>' +
-      data.items.map(i => '<tr><td>' + (i.company_name || '-') + '</td><td>' + (i.brand_name || '-') + '</td><td>' + (i.contact_email || '-') + '</td><td>' + (i.membership_expires_at ? new Date(i.membership_expires_at).toLocaleDateString() : '-') + '</td><td>' + (i.ai_package_type || '-') + '</td><td>' + statusBadge(i.status === 'active' ? 'active' : 'pending') + '</td><td><button class="btn btn-sm btn-outline" onclick="showToast(\'详情页开发中\')">查看</button></td></tr>').join('') + '</table>'
+      data.items.map(i => '<tr><td>' + (i.company_name || '-') + '</td><td>' + (i.brand_name || '-') + '</td><td>' + (i.contact_email || '-') + '</td><td>' + (i.membership_expires_at ? new Date(i.membership_expires_at).toLocaleDateString() : '-') + '</td><td>' + (i.ai_package_type || '-') + '</td><td>' + (i.status === 'refund_pending' ? '<span class="badge badge-warning">退款中</span>' : statusBadge(i.status === 'active' ? 'active' : 'pending')) + '</td><td>' +
+        (i.status === 'refund_pending'
+          ? '<button class="btn btn-sm btn-success" onclick="approveRefund(\'' + i.id + '\')">审核通过</button> <button class="btn btn-sm btn-danger" onclick="rejectRefund(\'' + i.id + '\')">拒绝</button>'
+          : '<button class="btn btn-sm btn-outline" onclick="showToast(\'详情页开发中\')">查看</button>') +
+        '</td></tr>').join('') + '</table>'
     : '<div class="empty"><p>暂无企业</p></div>';
   
   if (data.totalPages > 1) {
@@ -125,6 +131,39 @@ async function loadComps() {
     document.getElementById('comp-pagination').innerHTML = phtml;
   }
 }
+async function exportCsv(type) {
+  const token = localStorage.getItem('token');
+  const res = await fetch('/api/admin/export/' + type, {
+    headers: { 'Authorization': 'Bearer ' + token }
+  });
+  if (res.ok) {
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = type + '.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+    showToast('导出成功');
+  } else {
+    showToast('导出失败', 'error');
+  }
+}
+
+async function approveRefund(id) {
+  if (!confirm('确定通过此退款申请？费用将退还到代理商余额。')) return;
+  const r = await api('/admin/refunds/' + id + '/approve', { method: 'POST' });
+  if (r.success) { showToast('退款已审核通过'); loadComps(); }
+  else showToast(r.error || '操作失败', 'error');
+}
+
+async function rejectRefund(id) {
+  if (!confirm('确定拒绝此退款申请？企业状态将恢复正常。')) return;
+  const r = await api('/admin/refunds/' + id + '/reject', { method: 'POST' });
+  if (r.success) { showToast('退款申请已拒绝'); loadComps(); }
+  else showToast(r.error || '操作失败', 'error');
+}
+
 loadComps();
 </script>
 ${navScript('companies')}`;
@@ -220,6 +259,7 @@ export function adminFinancePage(): string {
     <select id="orderStatusFilter" onchange="loadOrders()">
       <option value="">全部状态</option><option value="paid">已支付</option><option value="pending">待支付</option><option value="refunded">已退款</option>
     </select>
+    <button class="btn btn-outline btn-sm" onclick="exportCsv('publish-records')">📥 发布记录CSV</button>
   </div>
   <div id="finance-table"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
   <div id="finance-pagination" class="pagination"></div>
@@ -346,6 +386,60 @@ loadConfig();
 ${navScript('config')}`;
 
   return pageLayout('系统配置', NAV, SIDEBAR_LOGO,
+    `<span>总控管理员</span><a href="#" onclick="logout()" class="logout">退出</a>`,
+    body);
+}
+
+// ===== 退款管理 =====
+export function adminRefundsPage(): string {
+  const body = `
+<div class="card">
+  <h3>🔄 退款申请管理</h3>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">代理商提交的企业注销退款申请，创建超过7天的企业不可退款。</p>
+  <div id="refund-table"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
+  <div id="refund-pagination" class="pagination"></div>
+</div>
+<script>
+let rfp = 1;
+async function loadRefunds() {
+  const r = await api('/admin/refunds?page=' + rfp + '&pageSize=20');
+  if (!r.success) return;
+  const data = r.data;
+  document.getElementById('refund-table').innerHTML = data.items.length
+    ? '<table><tr><th>企业名称</th><th>代理商</th><th>注册费</th><th>创建时间</th><th>申请时间</th><th>操作</th></tr>' +
+      data.items.map(i => '<tr><td>' + (i.company_name || '-') + '</td><td>' + (i.agent_name || '自助注册') + '</td><td>¥' + ((i.registration_fee || 0) / 100).toFixed(2) + '</td><td>' + formatDate(i.created_at) + '</td><td>' + formatDate(i.refund_requested_at) + '</td><td>' +
+        '<button class="btn btn-sm btn-success" onclick="approveRefund(\'' + i.id + '\')">✅ 通过</button> ' +
+        '<button class="btn btn-sm btn-danger" onclick="rejectRefund(\'' + i.id + '\')">❌ 拒绝</button></td></tr>').join('') + '</table>'
+    : '<div class="empty"><p>暂无退款申请</p></div>';
+  
+  if (data.totalPages > 1) {
+    let phtml = '';
+    for (let i = 1; i <= data.totalPages; i++) {
+      phtml += '<a href="#" onclick="rfp=' + i + ';loadRefunds();return false" class="' + (i === rfp ? 'active' : '') + '">' + i + '</a>';
+    }
+    document.getElementById('refund-pagination').innerHTML = phtml;
+  }
+}
+
+async function approveRefund(id) {
+  if (!confirm('确定通过此退款申请？费用将退还到代理商余额，企业将被禁用。')) return;
+  const r = await api('/admin/refunds/' + id + '/approve', { method: 'POST' });
+  if (r.success) { showToast('退款已审核通过'); loadRefunds(); }
+  else showToast(r.error || '操作失败', 'error');
+}
+
+async function rejectRefund(id) {
+  if (!confirm('确定拒绝此退款申请？企业状态将恢复为正常。')) return;
+  const r = await api('/admin/refunds/' + id + '/reject', { method: 'POST' });
+  if (r.success) { showToast('退款申请已拒绝'); loadRefunds(); }
+  else showToast(r.error || '操作失败', 'error');
+}
+
+loadRefunds();
+</script>
+${navScript('refunds')}`;
+
+  return pageLayout('退款管理', NAV, SIDEBAR_LOGO,
     `<span>总控管理员</span><a href="#" onclick="logout()" class="logout">退出</a>`,
     body);
 }

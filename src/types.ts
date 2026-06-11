@@ -11,6 +11,8 @@ export interface Env {
   JWT_EXPIRES_IN: string;
   AGNES_API_BASE_URL: string;
   AGNES_API_KEY: string;
+  AGNES_API_KEY_OLD: string;
+  AGNES_API_KEY_NEW: string;
   SITE_NAME: string;
   SITE_DESCRIPTION: string;
   // 社媒 OAuth 配置（可选）

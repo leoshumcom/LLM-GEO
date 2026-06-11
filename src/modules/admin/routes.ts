@@ -402,7 +402,68 @@ adminRouter.get('/orders', async (c) => {
   }
 });
 
-// ========== 全量数据导出 ==========
+// ========== CSV 数据导出 ==========
+
+// GET /api/admin/export/companies - 企业列表导出 CSV
+adminRouter.get('/export/companies', async (c) => {
+  try {
+    const items = await c.env.DB.prepare(
+      `SELECT sc.company_name, sc.brand_name, sc.contact_email, sc.contact_phone,
+              sc.website, sc.registration_type, sc.registration_fee, sc.status,
+              sc.membership_expires_at, sc.ai_package_type, sc.created_at,
+              sa.username as agent_name
+       FROM sys_company sc
+       LEFT JOIN sys_agent sa ON sc.agent_id = sa.id
+       ORDER BY sc.created_at DESC`
+    ).all();
+
+    const rows = (items.results || []) as any[];
+    const header = '企业名称,品牌名称,邮箱,电话,官网,注册方式,注册费(分),状态,会员到期,AI套餐,创建时间,代理商\n';
+    const csv = header + rows.map(r =>
+      `"${(r.company_name || '').replace(/"/g, '""')}","${(r.brand_name || '').replace(/"/g, '""')}","${r.contact_email || ''}","${r.contact_phone || ''}","${r.website || ''}","${r.registration_type || ''}",${r.registration_fee || 0},"${r.status || ''}","${r.membership_expires_at || ''}","${r.ai_package_type || ''}","${r.created_at || ''}","${(r.agent_name || '').replace(/"/g, '""')}"`
+    ).join('\n');
+
+    return c.newResponse(csv, 200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="companies.csv"',
+    });
+  } catch (e) {
+    console.error('[Admin] Export companies error:', e);
+    return c.json({ success: false, error: '导出失败' }, 500);
+  }
+});
+
+// GET /api/admin/export/publish-records - 发布记录导出 CSV
+adminRouter.get('/export/publish-records', async (c) => {
+  try {
+    const items = await c.env.DB.prepare(
+      `SELECT pr.id, pr.platform, pr.platform_url, pr.channel_type, pr.status,
+              pr.published_at, pr.created_at,
+              agc.keyword, agc.title,
+              sc.company_name
+       FROM publish_record pr
+       LEFT JOIN ai_generate_content agc ON pr.content_id = agc.id
+       LEFT JOIN sys_company sc ON pr.tenant_id = sc.tenant_id
+       ORDER BY pr.created_at DESC`
+    ).all();
+
+    const rows = (items.results || []) as any[];
+    const header = 'ID,企业名称,关键词,标题,平台,外链URL,渠道类型,状态,发布时间,创建时间\n';
+    const csv = header + rows.map(r =>
+      `"${r.id || ''}","${(r.company_name || '').replace(/"/g, '""')}","${(r.keyword || '').replace(/"/g, '""')}","${(r.title || '').replace(/"/g, '""')}","${r.platform || ''}","${(r.platform_url || '').replace(/"/g, '""')}","${r.channel_type || ''}","${r.status || ''}","${r.published_at || ''}","${r.created_at || ''}"`
+    ).join('\n');
+
+    return c.newResponse(csv, 200, {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="publish_records.csv"',
+    });
+  } catch (e) {
+    console.error('[Admin] Export publish error:', e);
+    return c.json({ success: false, error: '导出失败' }, 500);
+  }
+});
+
+// ========== 全量数据导出（JSON） ==========
 adminRouter.get('/export/:type', async (c) => {
   try {
     const type = c.req.param('type');
@@ -423,6 +484,140 @@ adminRouter.get('/export/:type', async (c) => {
     return c.json({ success: true, data: data.results || [] });
   } catch (e) {
     return c.json({ success: false, error: '导出失败' }, 500);
+  }
+});
+
+// ========== 7天退款管理 ==========
+
+// GET /api/admin/refunds - 获取退款申请列表
+adminRouter.get('/refunds', async (c) => {
+  try {
+    const page = parseInt(c.req.query('page') || '1');
+    const pageSize = Math.min(parseInt(c.req.query('pageSize') || '20'), 100);
+    const offset = (page - 1) * pageSize;
+
+    const total = await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM sys_company WHERE status = 'refund_pending'`
+    ).first();
+
+    const items = await c.env.DB.prepare(
+      `SELECT sc.id, sc.company_name, sc.brand_name, sc.contact_email, sc.registration_fee,
+              sc.created_at, sc.refund_requested_at, sa.username as agent_name, sa.id as agent_id
+       FROM sys_company sc
+       LEFT JOIN sys_agent sa ON sc.agent_id = sa.id
+       WHERE sc.status = 'refund_pending'
+       ORDER BY sc.refund_requested_at DESC LIMIT ? OFFSET ?`
+    ).bind(pageSize, offset).all();
+
+    return c.json({
+      success: true,
+      data: {
+        items: items.results || [],
+        total: total?.cnt || 0,
+        page, pageSize,
+        totalPages: Math.ceil((total?.cnt || 0) / pageSize)
+      }
+    });
+  } catch (e) {
+    console.error('[Admin] Refund list error:', e);
+    return c.json({ success: false, error: '获取退款列表失败' }, 500);
+  }
+});
+
+// POST /api/admin/refunds/:id/approve - 审核通过退款
+adminRouter.post('/refunds/:id/approve', async (c) => {
+  try {
+    const companyId = c.req.param('id');
+
+    const company = await c.env.DB.prepare(
+      `SELECT id, agent_id, registration_fee, company_name
+       FROM sys_company WHERE id = ? AND status = 'refund_pending'`
+    ).first<{ id: string; agent_id: string | null; registration_fee: number; company_name: string }>();
+
+    if (!company) {
+      return c.json({ success: false, error: '退款申请不存在或已处理' }, 404);
+    }
+
+    if (!company.agent_id) {
+      // 自助注册企业没有代理商，直接标记为 disabled
+      await c.env.DB.prepare(
+        `UPDATE sys_company SET status = 'disabled', updated_at = datetime('now') WHERE id = ?`
+      ).bind(companyId).run();
+    } else {
+      // 有代理商：退费到代理商余额
+      const agent = await c.env.DB.prepare(
+        `SELECT balance FROM sys_agent WHERE id = ?`
+      ).bind(company.agent_id).first<{ balance: number }>();
+
+      if (!agent) {
+        return c.json({ success: false, error: '代理商不存在' }, 404);
+      }
+
+      const beforeBalance = agent.balance;
+      const afterBalance = beforeBalance + company.registration_fee;
+
+      // 更新企业状态
+      await c.env.DB.prepare(
+        `UPDATE sys_company SET status = 'disabled', updated_at = datetime('now') WHERE id = ?`
+      ).bind(companyId).run();
+
+      // 增加代理商余额
+      await c.env.DB.prepare(
+        `UPDATE sys_agent SET balance = ?, updated_at = datetime('now') WHERE id = ?`
+      ).bind(afterBalance, company.agent_id).run();
+
+      // 余额变动日志
+      await c.env.DB.prepare(
+        `INSERT INTO agent_balance_log (id, agent_id, order_id, change_amount, balance_before, balance_after, operation_type, description, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, 'refund', ?, datetime('now'))`
+      ).bind(crypto.randomUUID(), company.agent_id, companyId,
+        company.registration_fee, beforeBalance, afterBalance,
+        '退款: ' + company.company_name + ' 注销退款 ¥' + (company.registration_fee / 100).toFixed(2)).run();
+    }
+
+    // 记录日志
+    await c.env.DB.prepare(
+      `INSERT INTO system_log (id, user_id, user_type, action, target_type, target_id, detail, created_at)
+       VALUES (?, ?, 'admin', 'refund_approve', 'sys_company', ?, ?, datetime('now'))`
+    ).bind(crypto.randomUUID(), c.get('user').userId, companyId,
+      '审核通过退款: ' + company.company_name + ', 退费 ' + (company.registration_fee / 100).toFixed(2) + ' 元').run();
+
+    return c.json({ success: true, message: '退款已审核通过，企业已禁用' });
+  } catch (e) {
+    console.error('[Admin] Refund approve error:', e);
+    return c.json({ success: false, error: '审核失败' }, 500);
+  }
+});
+
+// POST /api/admin/refunds/:id/reject - 审核拒绝退款
+adminRouter.post('/refunds/:id/reject', async (c) => {
+  try {
+    const companyId = c.req.param('id');
+
+    const company = await c.env.DB.prepare(
+      `SELECT id, company_name FROM sys_company WHERE id = ? AND status = 'refund_pending'`
+    ).first<{ id: string; company_name: string }>();
+
+    if (!company) {
+      return c.json({ success: false, error: '退款申请不存在或已处理' }, 404);
+    }
+
+    // 恢复企业状态为 active
+    await c.env.DB.prepare(
+      `UPDATE sys_company SET status = 'active', refund_requested_at = NULL, updated_at = datetime('now') WHERE id = ?`
+    ).bind(companyId).run();
+
+    // 记录日志
+    await c.env.DB.prepare(
+      `INSERT INTO system_log (id, user_id, user_type, action, target_type, target_id, detail, created_at)
+       VALUES (?, ?, 'admin', 'refund_reject', 'sys_company', ?, ?, datetime('now'))`
+    ).bind(crypto.randomUUID(), c.get('user').userId, companyId,
+      '审核拒绝退款: ' + company.company_name).run();
+
+    return c.json({ success: true, message: '退款申请已拒绝，企业状态已恢复' });
+  } catch (e) {
+    console.error('[Admin] Refund reject error:', e);
+    return c.json({ success: false, error: '拒绝失败' }, 500);
   }
 });
 
