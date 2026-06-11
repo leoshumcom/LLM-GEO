@@ -11,10 +11,12 @@ const NAV = `
 <a href="/company/keywords" data-nav="keywords">🔑 关键词管理</a>
 <a href="/company/ai" data-nav="ai">🤖 AI 内容生成</a>
 <a href="/company/publish" data-nav="publish">📤 发布记录</a>
+<a href="/company/sites" data-nav="sites">🌐 站群发布</a>
 <a href="/company/social" data-nav="social">🔗 社媒绑定</a>
 <a href="/company/profile" data-nav="profile">🏢 企业资料</a>
 <a href="/company/operators" data-nav="operators">👥 子账号</a>
 <a href="/company/media" data-nav="media">🖼️ 素材库</a>
+<a href="/company/packages" data-nav="packages">💳 购买套餐</a>
 `;
 
 function navScript(active: string): string {
@@ -486,6 +488,229 @@ loadMedia();
 ${navScript('media')}`;
 
   return pageLayout('素材库', NAV, SIDEBAR_LOGO,
+    `<span>${user.company_name || ''}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
+    body);
+}
+
+// ===== 站群发布（WordPress 站点管理） =====
+export function companySitesPage(user: any): string {
+  const body = `
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <h3 style="margin:0">站群站点管理</h3>
+    <button class="btn btn-primary btn-sm" onclick="showAddSite()">➕ 添加站点</button>
+  </div>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">添加你的 WordPress 站点后，AI 生成的内容可一键发布到这些站点。</p>
+  <div id="site-list"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
+</div>
+
+<div class="card">
+  <h3>发布内容</h3>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">选择已完成的 AI 生成内容，发布到选中的站点。</p>
+  <div class="search-bar">
+    <select id="pubSiteFilter" onchange="loadContentForPublish()"><option value="">选择站点...</option></select>
+    <button class="btn btn-success" onclick="batchPublishSelected()" id="batchPubBtn" disabled>📤 发布选中内容</button>
+  </div>
+  <div id="content-for-publish"><div class="empty"><div class="icon">⏳</div><p>加载完成的内容...</p></div></div>
+</div>
+
+<!-- 添加站点 Modal -->
+<div class="modal-overlay" id="addSiteModal">
+  <div class="modal">
+    <h3>添加 WordPress 站点</h3>
+    <div class="form-group"><label>站点名称</label><input type="text" id="siteName" placeholder="例如: 我的车灯站"></div>
+    <div class="form-group"><label>站点 URL</label><input type="text" id="siteUrl" placeholder="例如: https://bona-official.com"></div>
+    <div class="form-row">
+      <div class="form-group"><label>WordPress 用户名</label><input type="text" id="siteUser" placeholder="管理员用户名"></div>
+      <div class="form-group"><label>应用密码</label><input type="password" id="sitePass" placeholder="在WP后台生成的应用密码"></div>
+    </div>
+    <p style="color:#6b7280;font-size:12px;margin-bottom:16px;">💡 在 WordPress 后台 → 用户 → 应用密码中生成一个专用密码</p>
+    <div class="actions">
+      <button class="btn btn-outline" onclick="closeSiteModal()">取消</button>
+      <button class="btn btn-primary" onclick="addSite()">添加并测试连接</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let sitePage = 1;
+async function loadSites() {
+  const r = await api('/publish/sites');
+  if (!r.success) return;
+  const items = r.data || [];
+  document.getElementById('site-list').innerHTML = items.length
+    ? '<table><tr><th>站点名称</th><th>URL</th><th>类型</th><th>状态</th><th>操作</th></tr>' +
+      items.map(i => '<tr><td>' + (i.site_name || '-') + '</td><td><a href="' + i.site_url + '" target="_blank" style="font-size:13px;">' + i.site_url + '</a></td><td>' + (i.site_type || 'wordpress') + '</td><td>' + (i.status === 'active' ? '<span class="badge badge-success">正常</span>' : '<span class="badge badge-danger">异常</span>') + '</td><td>' +
+        '<button class="btn btn-sm btn-outline" onclick="testSite(\'' + i.id + '\')">测试</button> ' +
+        '<button class="btn btn-sm btn-danger" onclick="deleteSite(\'' + i.id + '\')">删除</button></td></tr>').join('') + '</table>'
+    : '<div class="empty"><p>还没有添加站点，点击上方按钮添加</p></div>';
+  
+  // 填充发布筛选
+  const sel = document.getElementById('pubSiteFilter');
+  sel.innerHTML = '<option value="">选择站点...</option>' + items.filter(i => i.status === 'active').map(i => '<option value="' + i.id + '">' + i.site_name + '</option>').join('');
+}
+
+function showAddSite() { document.getElementById('addSiteModal').classList.add('show'); }
+function closeSiteModal() { document.getElementById('addSiteModal').classList.remove('show'); }
+
+async function addSite() {
+  const siteName = document.getElementById('siteName').value.trim();
+  const siteUrl = document.getElementById('siteUrl').value.trim();
+  const wpUsername = document.getElementById('siteUser').value.trim();
+  const wpPassword = document.getElementById('sitePass').value.trim();
+  if (!siteName || !siteUrl || !wpUsername || !wpPassword) return showToast('请填写完整信息', 'error');
+  const btn = event.target; btn.disabled = true; btn.textContent = '⏳ 测试连接中...';
+  const r = await api('/publish/sites', { method: 'POST', body: JSON.stringify({ siteName, siteUrl, wpUsername, wpPassword }) });
+  if (r.success) { showToast(r.message || '站点添加成功'); closeSiteModal(); loadSites(); }
+  else showToast(r.error || '添加失败', 'error');
+  btn.disabled = false; btn.textContent = '添加并测试连接';
+}
+
+async function testSite(id) {
+  const r = await api('/publish/sites/' + id + '/test');
+  if (r.success && r.data.ok) showToast('连接正常');
+  else showToast('连接失败: ' + (r.data?.error || '未知错误'), 'error');
+  loadSites();
+}
+
+async function deleteSite(id) {
+  if (!confirm('确定删除该站点？')) return;
+  const r = await api('/publish/sites/' + id, { method: 'DELETE' });
+  if (r.success) { showToast('删除成功'); loadSites(); }
+  else showToast(r.error || '删除失败', 'error');
+}
+
+let selectedContentForPub = new Set();
+async function loadContentForPublish() {
+  selectedContentForPub.clear();
+  const r = await api('/company/ai/generate?pageSize=100');
+  if (!r.success) return;
+  const items = (r.data?.items || []).filter(i => i.status === 'completed');
+  document.getElementById('content-for-publish').innerHTML = items.length
+    ? '<table><tr><th style="width:40px"><input type="checkbox" onchange="toggleAllContent(this)"></th><th>标题/关键词</th><th>完成时间</th></tr>' +
+      items.map(i => '<tr><td><input type="checkbox" value="' + i.id + '" onchange="toggleContent(this)"></td><td>' + (i.title || i.keyword) + '</td><td>' + formatDate(i.created_at) + '</td></tr>').join('') + '</table>'
+    : '<div class="empty"><p>没有已完成的内容</p></div>';
+}
+
+function toggleAllContent(cb) {
+  document.querySelectorAll('#content-for-publish input[type=checkbox]').forEach(c => { c.checked = cb.checked; updateContentPub(); });
+}
+
+function toggleContent(cb) {
+  if (cb.checked) selectedContentForPub.add(cb.value);
+  else selectedContentForPub.delete(cb.value);
+  updateContentPub();
+}
+
+function updateContentPub() {
+  const btn = document.getElementById('batchPubBtn');
+  const site = document.getElementById('pubSiteFilter').value;
+  btn.disabled = selectedContentForPub.size === 0 || !site;
+  btn.textContent = selectedContentForPub.size > 0 ? '📤 发布 ' + selectedContentForPub.size + ' 篇内容' : '📤 发布选中内容';
+}
+
+async function batchPublishSelected() {
+  const siteId = document.getElementById('pubSiteFilter').value;
+  if (!siteId) return showToast('请先选择一个站点', 'error');
+  if (selectedContentForPub.size === 0) return showToast('请选择内容', 'error');
+  const btn = document.getElementById('batchPubBtn');
+  btn.disabled = true; btn.textContent = '⏳ 发布中...';
+  const r = await api('/publish/now', { method: 'POST', body: JSON.stringify({ contentId: Array.from(selectedContentForPub)[0], siteIds: [siteId] }) });
+  if (r.success) { showToast(r.message); loadContentForPublish(); }
+  else showToast(r.error || '发布失败', 'error');
+  btn.disabled = false; btn.textContent = '📤 发布选中内容';
+}
+
+loadSites();
+loadContentForPublish();
+</script>
+${navScript('sites')}`;
+
+  return pageLayout('站群发布', NAV, SIDEBAR_LOGO,
+    `<span>${user.company_name || ''}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
+    body);
+}
+
+// ===== 购买套餐 =====
+export function companyPackagesPage(user: any): string {
+  const body = `
+<div class="card">
+  <h3>当前套餐</h3>
+  <div style="display:flex;gap:24px;flex-wrap:wrap;">
+    <div style="flex:1;min-width:200px;padding:20px;background:#f0f9ff;border-radius:12px;border:1px solid #bae6fd;">
+      <p style="color:#0369a1;font-size:13px;margin-bottom:4px;">AI 套餐</p>
+      <p style="font-size:24px;font-weight:700;">${user.ai_package_type && user.ai_package_type !== 'none' ? '已开通' : '未开通'}</p>
+      <p style="color:#6b7280;font-size:13px;">${user.ai_package_expires_at ? '到期: ' + new Date(user.ai_package_expires_at).toLocaleDateString() : '尚未购买'}</p>
+    </div>
+    <div style="flex:1;min-width:200px;padding:20px;background:#f0fdf4;border-radius:12px;border:1px solid #bbf7d0;">
+      <p style="color:#15803d;font-size:13px;margin-bottom:4px;">会员到期</p>
+      <p style="font-size:24px;font-weight:700;">${user.membership_expires_at ? new Date(user.membership_expires_at).toLocaleDateString() : '未开通'}</p>
+      <p style="color:#6b7280;font-size:13px;">${user.registration_type === 'agent' ? '由代理商代开' : '自助注册'}</p>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>AI 模型套餐</h3>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:20px;">购买后可无限使用 AI 生成内容功能，按天或按月。</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;">
+    <div style="border:2px solid #e5e7eb;border-radius:12px;padding:32px;text-align:center;transition:all .2s;" onmouseover="this.style.borderColor='#2563eb'" onmouseout="this.style.borderColor='#e5e7eb'">
+      <div style="font-size:32px;margin-bottom:12px;">☀️</div>
+      <h3 style="font-size:20px;margin-bottom:8px;">AI 日套餐</h3>
+      <div style="font-size:36px;font-weight:700;color:#2563eb;margin:16px 0;">¥66</div>
+      <p style="color:#6b7280;font-size:14px;margin-bottom:20px;">当天无限次 AI 内容生成<br>适合临时测试需求</p>
+      <button class="btn btn-primary" onclick="buyPackage('ai_daily')" style="width:100%;justify-content:center;">立即购买</button>
+    </div>
+    <div style="border:2px solid #2563eb;border-radius:12px;padding:32px;text-align:center;position:relative;transition:all .2s;">
+      <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#2563eb;color:#fff;padding:4px 16px;border-radius:20px;font-size:12px;font-weight:600;">推荐</div>
+      <div style="font-size:32px;margin-bottom:12px;">🌙</div>
+      <h3 style="font-size:20px;margin-bottom:8px;">AI 月套餐</h3>
+      <div style="font-size:36px;font-weight:700;color:#2563eb;margin:16px 0;">¥666</div>
+      <p style="color:#6b7280;font-size:14px;margin-bottom:20px;">30天无限次 AI 内容生成<br>适合持续运营需求</p>
+      <button class="btn btn-success" onclick="buyPackage('ai_monthly')" style="width:100%;justify-content:center;">立即购买</button>
+    </div>
+  </div>
+</div>
+
+<div class="card" id="payment-status" style="display:none;">
+  <h3>💰 支付</h3>
+  <div id="payment-content"></div>
+</div>
+
+<script>
+async function buyPackage(packageType) {
+  const names = { ai_daily: 'AI 日套餐 ¥66', ai_monthly: 'AI 月套餐 ¥666' };
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '⏳ 创建订单...';
+  
+  const r = await api('/payment/create', {
+    method: 'POST',
+    body: JSON.stringify({ packageType })
+  });
+  
+  if (r.success) {
+    const d = r.data;
+    // 显示支付信息
+    document.getElementById('payment-status').style.display = 'block';
+    document.getElementById('payment-content').innerHTML = 
+      '<p>订单号：<strong>' + d.orderNo + '</strong></p>' +
+      '<p>金额：<strong>¥' + d.amount + '</strong></p>' +
+      '<div style="margin:20px 0;text-align:center;">' +
+        (d.qrcode ? '<img src="' + d.qrcode + '" style="width:200px;height:200px;border:1px solid #e5e7eb;border-radius:8px;"><p style="font-size:14px;color:#6b7280;margin-top:8px;">请使用微信/支付宝扫码支付</p>' : '') +
+        '<p><a href="' + (d.payUrl || '#') + '" target="_blank" class="btn btn-success" style="justify-content:center;' + (d.qrcode ? 'margin-top:8px;' : '') + '">🔗 去支付</a></p>' +
+      '</div>' +
+      '<p style="font-size:13px;color:#6b7280;text-align:center;">支付完成后请等待几秒，系统自动生效</p>';
+    showToast('订单已创建，请完成支付');
+  } else {
+    showToast(r.error || '创建订单失败', 'error');
+  }
+  
+  btn.disabled = false; btn.textContent = '立即购买';
+}
+</script>
+${navScript('packages')}`;
+
+  return pageLayout('购买套餐', NAV, SIDEBAR_LOGO,
     `<span>${user.company_name || ''}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
     body);
 }

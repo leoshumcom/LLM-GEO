@@ -183,6 +183,37 @@ agentRouter.get('/balance', async (c) => {
   }
 });
 
+// ========== 余额流水 ==========
+agentRouter.get('/balance/log', async (c) => {
+  try {
+    const user = c.get('user');
+    const page = parseInt(c.req.query('page') || '1');
+    const pageSize = Math.min(parseInt(c.req.query('pageSize') || '20'), 100);
+    const offset = (page - 1) * pageSize;
+
+    const total = await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM agent_balance_log WHERE agent_id = ?`
+    ).bind(user.userId).first();
+    const items = await c.env.DB.prepare(
+      `SELECT change_amount, balance_before, balance_after, operation_type, description, created_at
+       FROM agent_balance_log WHERE agent_id = ?
+       ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    ).bind(user.userId, pageSize, offset).all();
+
+    return c.json({
+      success: true,
+      data: {
+        items: items.results || [],
+        total: total?.cnt || 0,
+        page, pageSize,
+        totalPages: Math.ceil((total?.cnt || 0) / pageSize)
+      }
+    });
+  } catch (e) {
+    return c.json({ success: false, error: '查询余额流水失败' }, 500);
+  }
+});
+
 // ========== 余额充值（创建充值订单） ==========
 agentRouter.post('/recharge', async (c) => {
   try {

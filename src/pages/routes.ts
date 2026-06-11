@@ -19,6 +19,8 @@ import {
   companySocialPage,
   companyOperatorsPage,
   companyMediaPage,
+  companySitesPage,
+  companyPackagesPage,
 } from './company/index';
 // 代理商页面
 import {
@@ -74,6 +76,18 @@ async function getCompanyStats(db: D1Database, tenantId: string): Promise<any> {
     socialCount: social?.c || 0,
   };
 }
+
+pagesRouter.get('/company/sites', authMiddleware, requireRole('company', 'operator'), async (c) => {
+  const user = c.get('user') as JwtPayload;
+  const company = await getUserData(c.env.DB, user);
+  return c.html(companySitesPage(company));
+});
+
+pagesRouter.get('/company/packages', authMiddleware, requireRole('company', 'operator'), async (c) => {
+  const user = c.get('user') as JwtPayload;
+  const company = await getUserData(c.env.DB, user);
+  return c.html(companyPackagesPage(company));
+});
 
 // ========== 企业端 ==========
 pagesRouter.get('/company/dashboard', authMiddleware, requireRole('company', 'operator'), async (c) => {

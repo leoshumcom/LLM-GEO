@@ -326,6 +326,82 @@ adminRouter.get('/logs', async (c) => {
   }
 });
 
+// ========== 管理看板统计数据（供前端 adminDashboardPage 调用） ==========
+adminRouter.get('/stats', async (c) => {
+  try {
+    const totalCompanies = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM sys_company').first();
+    const totalAgents = await c.env.DB.prepare("SELECT COUNT(*) as cnt FROM sys_agent WHERE status = 'active'").first();
+    const totalOrders = await c.env.DB.prepare("SELECT COUNT(*) as cnt FROM finance_order WHERE payment_status = 'paid'").first();
+    const newThisMonth = await c.env.DB.prepare(
+      "SELECT COUNT(*) as cnt FROM sys_company WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')"
+    ).first();
+    const monthRev = await c.env.DB.prepare(
+      "SELECT COALESCE(SUM(amount), 0) as amount FROM finance_order WHERE payment_status = 'paid' AND strftime('%Y-%m', paid_at) = strftime('%Y-%m', 'now')"
+    ).first();
+    const pendingRes = await c.env.DB.prepare("SELECT COUNT(*) as cnt FROM reservation_form WHERE status = 'pending'").first();
+    const totalGen = await c.env.DB.prepare("SELECT COUNT(*) as cnt FROM ai_generate_content").first();
+    const totalPub = await c.env.DB.prepare("SELECT COUNT(*) as cnt FROM publish_record WHERE status = 'published'").first();
+    const refundReq = await c.env.DB.prepare("SELECT COUNT(*) as cnt FROM finance_order WHERE payment_status = 'refund_requested'").first();
+
+    return c.json({
+      success: true,
+      data: {
+        totalCompanies: totalCompanies?.cnt || 0,
+        totalAgents: totalAgents?.cnt || 0,
+        totalOrders: totalOrders?.cnt || 0,
+        newCompaniesThisMonth: newThisMonth?.cnt || 0,
+        monthRevenue: monthRev?.amount || 0,
+        pendingReservations: pendingRes?.cnt || 0,
+        totalGenerations: totalGen?.cnt || 0,
+        totalPublished: totalPub?.cnt || 0,
+        refundRequests: refundReq?.cnt || 0,
+        totalRevenue: monthRev?.amount || 0,
+        pendingRefund: refundReq?.cnt || 0,
+      }
+    });
+  } catch (e) {
+    console.error('[Admin] Stats error:', e);
+    return c.json({ success: false, error: '获取统计数据失败' }, 500);
+  }
+});
+
+// ========== 管理员订单列表（供前端 adminFinancePage 调用） ==========
+adminRouter.get('/orders', async (c) => {
+  try {
+    const page = parseInt(c.req.query('page') || '1');
+    const pageSize = Math.min(parseInt(c.req.query('pageSize') || '20'), 100);
+    const offset = (page - 1) * pageSize;
+    const type = c.req.query('type') || '';
+    const status = c.req.query('status') || '';
+
+    let whereClause = 'WHERE 1=1';
+    const params: any[] = [];
+    if (type) { whereClause += ' AND order_type = ?'; params.push(type); }
+    if (status) { whereClause += ' AND payment_status = ?'; params.push(status); }
+
+    const total = await c.env.DB.prepare('SELECT COUNT(*) as cnt FROM finance_order ' + whereClause).bind(...params).first();
+    const items = await c.env.DB.prepare(
+      `SELECT fo.order_no, fo.order_type, fo.amount, fo.payment_status, fo.payment_method, fo.description, fo.created_at,
+              sc.company_name as tenant_name, sa.username as agent_name
+       FROM finance_order fo
+       LEFT JOIN sys_company sc ON fo.tenant_id = sc.tenant_id
+       LEFT JOIN sys_agent sa ON fo.agent_id = sa.id ` + whereClause + ' ORDER BY fo.created_at DESC LIMIT ? OFFSET ?'
+    ).bind(...params, pageSize, offset).all();
+
+    return c.json({
+      success: true,
+      data: {
+        items: items.results || [],
+        total: total?.cnt || 0,
+        page, pageSize,
+        totalPages: Math.ceil((total?.cnt || 0) / pageSize)
+      }
+    });
+  } catch (e) {
+    return c.json({ success: false, error: '获取订单列表失败' }, 500);
+  }
+});
+
 // ========== 全量数据导出 ==========
 adminRouter.get('/export/:type', async (c) => {
   try {

@@ -11,6 +11,7 @@ import { companyRouter } from './modules/company/routes';
 import { apiRouter } from './modules/api/routes';
 import { dashboardRouter } from './modules/dashboard/routes';
 import { paymentRouter } from './modules/payment/routes';
+import { publishRouter } from './modules/publish/routes';
 // 管理后台页面路由
 import { pagesRouter } from './pages/routes';
 // Queue 消费者
@@ -43,6 +44,7 @@ app.route('/api/company', companyRouter);
 app.route('/api/dashboard', dashboardRouter);
 app.route('/api/payment', paymentRouter);
 app.route('/payment', paymentRouter);
+app.route('/api/publish', publishRouter);
 app.route('/api', apiRouter);
 
 // ===== 管理后台页面 =====
