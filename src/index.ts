@@ -28,7 +28,7 @@ app.get('/api/health', (c) => {
   return c.json({
     success: true,
     message: 'LLMGEO API is running',
-    version: '0.1.0',
+    version: '0.1.1',
     timestamp: new Date().toISOString(),
   });
 });
