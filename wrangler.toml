@@ -42,9 +42,15 @@ APP_URL = "https://llmgeo.com"
 JWT_SECRET = "llmgeo_jwt_dabb379c8ae74b778d5813f1ab9d599c"
 JWT_EXPIRES_IN = "7d"
 AGNES_API_BASE_URL = "https://apihub.agnes-ai.com/v1"
-AGNES_API_KEY = ""
+AGNES_API_KEY = "wk-EfYIDFdYOdZWRd4Pb2Uub8YmSs9iJJULOcwBoeF0sk8Bq0io"
 SITE_NAME = "LLMGEO"
 SITE_DESCRIPTION = "海外GEO排名优化SaaS平台"
+TWITTER_CLIENT_ID = ""
+TWITTER_CLIENT_SECRET = ""
+FACEBOOK_APP_ID = ""
+FACEBOOK_APP_SECRET = ""
+LINKEDIN_CLIENT_ID = ""
+LINKEDIN_CLIENT_SECRET = ""
 
 # ===== 环境 =====
 [env.staging]

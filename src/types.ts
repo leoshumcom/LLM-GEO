@@ -13,6 +13,13 @@ export interface Env {
   AGNES_API_KEY: string;
   SITE_NAME: string;
   SITE_DESCRIPTION: string;
+  // 社媒 OAuth 配置（可选）
+  TWITTER_CLIENT_ID?: string;
+  TWITTER_CLIENT_SECRET?: string;
+  FACEBOOK_APP_ID?: string;
+  FACEBOOK_APP_SECRET?: string;
+  LINKEDIN_CLIENT_ID?: string;
+  LINKEDIN_CLIENT_SECRET?: string;
 }
 
 // ===== 用户角色 =====
