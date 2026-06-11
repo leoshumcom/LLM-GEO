@@ -617,54 +617,123 @@ ${navScript('social')}`;
     `<span>${user.company_name || ''}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
     body);
 }
-
-// ===== 子账号管理 =====
+// ===== 子账号 & 角色管理 =====
 export function companyOperatorsPage(user: any): string {
   const body = `
 <div class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-    <h3 style="margin:0">运营子账号</h3>
-    <button class="btn btn-primary btn-sm" onclick="showAddOpModal()">➕ 创建子账号</button>
-  </div>
+  <h3>👥 子账号管理</h3>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">
+    为企业成员分配独立登录账号，各自管理自己的内容，互不干扰。
+  </p>
+  <button class="btn btn-primary" onclick="showAddOperator()" style="margin-bottom:20px;">➕ 新建子账号</button>
   <div id="operator-list"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
 </div>
 
-<div class="modal-overlay" id="addOpModal">
-  <div class="modal">
-    <h3>创建运营子账号</h3>
-    <div class="form-group"><label>用户名（登录用）</label><input type="text" id="opUsername" placeholder="例如: editor01"></div>
-    <div class="form-group"><label>密码</label><input type="password" id="opPassword" placeholder="至少6位"></div>
-    <div class="form-group"><label>显示名称</label><input type="text" id="opDisplayName" placeholder="例如: 编辑小明"></div>
-    <div class="actions">
-      <button class="btn btn-outline" onclick="closeOpModal()">取消</button>
-      <button class="btn btn-primary" onclick="createOperator()">创建</button>
+<div class="card">
+  <h3>🔐 角色说明</h3>
+  <table>
+    <tr><th>角色</th><th>权限范围</th><th>适用对象</th></tr>
+    <tr><td><span class="badge badge-warning">company</span></td><td>全部企业管理权限（购买、配置、发布、子账号管理）</td><td>企业主 / 管理员</td></tr>
+    <tr><td><span class="badge badge-info">operator</span></td><td>内容查看、关键词管理、AI 生成、发布操作</td><td>运营人员 / 内容编辑</td></tr>
+  </table>
+</div>
+
+<!-- 新建/编辑子账号弹窗 -->
+<div class="modal" id="operatorModal">
+  <div class="modal-content" style="max-width:450px;">
+    <span class="close" onclick="closeOpModal()">&times;</span>
+    <h3 id="opModalTitle">新建子账号</h3>
+    <div class="form-group">
+      <label>用户名</label>
+      <input type="text" id="opUsername" placeholder="用于登录的用户名" required>
     </div>
+    <div class="form-group">
+      <label>显示名称</label>
+      <input type="text" id="opDisplayName" placeholder="如：小张">
+    </div>
+    <div class="form-group">
+      <label>密码</label>
+      <input type="password" id="opPassword" placeholder="至少6位" required>
+    </div>
+    <div class="form-group">
+      <label>角色</label>
+      <select id="opRole">
+        <option value="operator">👤 运营人员（可管理内容和发布）</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="saveOperator()">保存</button>
   </div>
 </div>
 
 <script>
+let editingOpId = '';
+
+function showAddOperator() {
+  editingOpId = '';
+  document.getElementById('opModalTitle').textContent = '新建子账号';
+  document.getElementById('opUsername').value = '';
+  document.getElementById('opUsername').disabled = false;
+  document.getElementById('opDisplayName').value = '';
+  document.getElementById('opPassword').value = '';
+  document.getElementById('operatorModal').classList.add('show');
+}
+
+function editOperator(op) {
+  editingOpId = op.id;
+  document.getElementById('opModalTitle').textContent = '编辑子账号';
+  document.getElementById('opUsername').value = op.username;
+  document.getElementById('opUsername').disabled = true;
+  document.getElementById('opDisplayName').value = op.display_name || '';
+  document.getElementById('opPassword').value = '';
+  document.getElementById('operatorModal').classList.add('show');
+}
+
+function closeOpModal() { document.getElementById('operatorModal').classList.remove('show'); }
+
+async function saveOperator() {
+  const username = document.getElementById('opUsername').value.trim();
+  const displayName = document.getElementById('opDisplayName').value.trim();
+  const password = document.getElementById('opPassword').value;
+
+  if (!username) return showToast('请输入用户名', 'error');
+
+  if (editingOpId) {
+    const body = {};
+    if (displayName) body.displayName = displayName;
+    if (password && password.length >= 6) body.password = password;
+    if (Object.keys(body).length === 0) return showToast('没有要更新的内容', 'error');
+    const r = await api('/company/operators/' + editingOpId, { method: 'PUT', body: JSON.stringify(body) });
+    if (r.success) { showToast('子账号已更新'); closeOpModal(); loadOperators(); }
+    else showToast(r.error || '更新失败', 'error');
+  } else {
+    if (!password || password.length < 6) return showToast('密码至少6位', 'error');
+    const r = await api('/company/operators', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, displayName: displayName || username })
+    });
+    if (r.success) { showToast('子账号创建成功！'); closeOpModal(); loadOperators(); }
+    else showToast(r.error || '创建失败', 'error');
+  }
+}
+
+async function deleteOperator(id, name) {
+  if (!confirm('确定删除子账号「' + name + '」？不可恢复。')) return;
+  const r = await api('/company/operators/' + id, { method: 'DELETE' });
+  if (r.success) { showToast('已删除'); loadOperators(); }
+  else showToast(r.error || '删除失败', 'error');
+}
+
 async function loadOperators() {
   const r = await api('/company/operators');
   if (!r.success) return;
-  const items = r.data;
+  const items = r.data || [];
   document.getElementById('operator-list').innerHTML = items.length
-    ? '<table><tr><th>用户名</th><th>显示名称</th><th>创建时间</th></tr>' +
-      items.map(i => '<tr><td>' + i.username + '</td><td>' + (i.display_name || '-') + '</td><td>' + formatDate(i.created_at) + '</td></tr>').join('') + '</table>'
-    : '<div class="empty"><p>暂无子账号</p></div>';
-}
-
-function showAddOpModal() { document.getElementById('addOpModal').classList.add('show'); }
-function closeOpModal() { document.getElementById('addOpModal').classList.remove('show'); }
-
-async function createOperator() {
-  const username = document.getElementById('opUsername').value.trim();
-  const password = document.getElementById('opPassword').value;
-  const displayName = document.getElementById('opDisplayName').value.trim();
-  if (!username || !password) return showToast('请填写用户名和密码', 'error');
-  if (password.length < 6) return showToast('密码至少6位', 'error');
-  const r = await api('/company/operators', { method: 'POST', body: JSON.stringify({ username, password, displayName }) });
-  if (r.success) { showToast('子账号创建成功'); closeOpModal(); loadOperators(); }
-  else showToast(r.error || '创建失败', 'error');
+    ? '<table><tr><th>用户名</th><th>显示名称</th><th>角色</th><th>创建时间</th><th>操作</th></tr>' +
+      items.map(i => '<tr><td><code style="color:#2563eb;">' + i.username + '</code></td><td>' + (i.display_name || '-') + '</td><td><span class="badge badge-info">operator</span></td><td>' + formatDate(i.created_at) + '</td><td>' +
+        '<button class="btn btn-sm btn-outline" onclick="editOperator(' + "'" + JSON.stringify(i).replace(/'/g,"\\'") + "'" + ')">✏️</button> ' +
+        '<button class="btn btn-sm btn-danger" onclick="deleteOperator(\'' + i.id + '\',\'' + (i.display_name || i.username) + '\')">🗑️</button>' +
+        '</td></tr>').join('') + '</table>'
+    : '<div class="empty"><p>暂无子账号</p><p style="font-size:13px;color:#6b7280;">点击「新建子账号」为团队分配账号</p></div>';
 }
 
 loadOperators();
@@ -846,41 +915,82 @@ ${navScript('sites')}`;
 export function companyPackagesPage(user: any): string {
   const body = `
 <div class="card">
-  <h3>当前套餐</h3>
+  <h3>📊 当前状态</h3>
   <div style="display:flex;gap:24px;flex-wrap:wrap;">
     <div style="flex:1;min-width:200px;padding:20px;background:#f0f9ff;border-radius:12px;border:1px solid #bae6fd;">
-      <p style="color:#0369a1;font-size:13px;margin-bottom:4px;">AI 套餐</p>
-      <p style="font-size:24px;font-weight:700;">${user.ai_package_type && user.ai_package_type !== 'none' ? '已开通' : '未开通'}</p>
-      <p style="color:#6b7280;font-size:13px;">${user.ai_package_expires_at ? '到期: ' + new Date(user.ai_package_expires_at).toLocaleDateString() : '尚未购买'}</p>
+      <p style="color:#0369a1;font-size:13px;margin-bottom:4px;">会员有效期</p>
+      <p style="font-size:20px;font-weight:700;">${user.membership_expires_at ? new Date(user.membership_expires_at).toLocaleDateString('zh-CN') : '未开通'}</p>
+      <p style="color:#6b7280;font-size:13px;">${user.registration_type === 'agent' ? '由代理商代开' : '自助注册'}</p>
     </div>
     <div style="flex:1;min-width:200px;padding:20px;background:#f0fdf4;border-radius:12px;border:1px solid #bbf7d0;">
-      <p style="color:#15803d;font-size:13px;margin-bottom:4px;">会员到期</p>
-      <p style="font-size:24px;font-weight:700;">${user.membership_expires_at ? new Date(user.membership_expires_at).toLocaleDateString() : '未开通'}</p>
-      <p style="color:#6b7280;font-size:13px;">${user.registration_type === 'agent' ? '由代理商代开' : '自助注册'}</p>
+      <p style="color:#15803d;font-size:13px;margin-bottom:4px;">AI 套餐状态</p>
+      <p style="font-size:20px;font-weight:700;">${user.ai_package_type && user.ai_package_type !== 'none' ? '已开通' : '未开通'}</p>
+      <p style="color:#6b7280;font-size:13px;">${user.ai_package_expires_at ? '到期: ' + new Date(user.ai_package_expires_at).toLocaleDateString('zh-CN') : '尚未购买'}</p>
     </div>
   </div>
 </div>
 
 <div class="card">
-  <h3>AI 模型套餐</h3>
-  <p style="color:#6b7280;font-size:14px;margin-bottom:20px;">购买后可无限使用 AI 生成内容功能，按天或按月。</p>
+  <h3>🏢 企业版套餐</h3>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:20px;">开通或续费企业主版本体，包含全部功能模块。</p>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;">
-    <div style="border:2px solid #e5e7eb;border-radius:12px;padding:32px;text-align:center;transition:all .2s;" onmouseover="this.style.borderColor='#2563eb'" onmouseout="this.style.borderColor='#e5e7eb'">
-      <div style="font-size:32px;margin-bottom:12px;">☀️</div>
-      <h3 style="font-size:20px;margin-bottom:8px;">AI 日套餐</h3>
-      <div style="font-size:36px;font-weight:700;color:#2563eb;margin:16px 0;">¥66</div>
-      <p style="color:#6b7280;font-size:14px;margin-bottom:20px;">当天无限次 AI 内容生成<br>适合临时测试需求</p>
-      <button class="btn btn-primary" onclick="buyPackage('ai_daily')" style="width:100%;justify-content:center;">立即购买</button>
+    <div style="border:2px solid #e5e7eb;border-radius:12px;padding:32px;text-align:center;transition:all .2s;" onmouseover="this.style.borderColor='#e5e7eb'" onmouseout="this.style.borderColor='#e5e7eb'">
+      <div style="font-size:32px;margin-bottom:12px;">🏪</div>
+      <h3 style="font-size:20px;margin-bottom:8px;">企业自助版</h3>
+      <div style="font-size:36px;font-weight:700;color:#2563eb;margin:16px 0;">¥1,688</div>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:20px;">/年 · 全功能<br>含站群发布、关键词管理、GEO内容生成、多用户</p>
+      <button class="btn btn-primary" onclick="buyPackage('enterprise_yearly')" style="width:100%;justify-content:center;">立即续费</button>
     </div>
-    <div style="border:2px solid #2563eb;border-radius:12px;padding:32px;text-align:center;position:relative;transition:all .2s;">
+    <div style="border:2px solid #2563eb;border-radius:12px;padding:32px;text-align:center;position:relative;">
       <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#2563eb;color:#fff;padding:4px 16px;border-radius:20px;font-size:12px;font-weight:600;">推荐</div>
-      <div style="font-size:32px;margin-bottom:12px;">🌙</div>
-      <h3 style="font-size:20px;margin-bottom:8px;">AI 月套餐</h3>
-      <div style="font-size:36px;font-weight:700;color:#2563eb;margin:16px 0;">¥666</div>
-      <p style="color:#6b7280;font-size:14px;margin-bottom:20px;">30天无限次 AI 内容生成<br>适合持续运营需求</p>
-      <button class="btn btn-success" onclick="buyPackage('ai_monthly')" style="width:100%;justify-content:center;">立即购买</button>
+      <div style="font-size:32px;margin-bottom:12px;">🚀</div>
+      <h3 style="font-size:20px;margin-bottom:8px;">代理商版</h3>
+      <div style="font-size:36px;font-weight:700;color:#2563eb;margin:16px 0;">¥8,888</div>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:20px;">一次性 · 不限客户数<br>含全部功能 + 子账号管理 + 充值系统</p>
+      <p style="color:#9ca3af;font-size:13px;">联系客服开通</p>
     </div>
   </div>
+</div>
+
+<div class="card">
+  <h3>🤖 AI 模型套餐</h3>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:20px;">购买后可无限使用 AI 生成内容功能。AI 套餐与企业版相互独立，可单独续费。</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;">
+    <div style="border:2px solid #e5e7eb;border-radius:12px;padding:24px;text-align:center;transition:all .2s;" onmouseover="this.style.borderColor='#2563eb'" onmouseout="this.style.borderColor='#e5e7eb'">
+      <div style="font-size:28px;margin-bottom:8px;">☀️</div>
+      <h3 style="font-size:18px;margin-bottom:8px;">日套餐</h3>
+      <div style="font-size:32px;font-weight:700;color:#2563eb;margin:12px 0;">¥66</div>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:16px;">当天无限次<br>适合临时测试</p>
+      <button class="btn btn-primary btn-sm" onclick="buyAiPackage('ai_daily')" style="width:100%;justify-content:center;">购买</button>
+    </div>
+    <div style="border:2px solid #2563eb;border-radius:12px;padding:24px;text-align:center;position:relative;">
+      <div style="position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:#2563eb;color:#fff;padding:4px 16px;border-radius:20px;font-size:12px;font-weight:600;">推荐</div>
+      <div style="font-size:28px;margin-bottom:8px;">🌙</div>
+      <h3 style="font-size:18px;margin-bottom:8px;">月套餐</h3>
+      <div style="font-size:32px;font-weight:700;color:#2563eb;margin:12px 0;">¥666</div>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:16px;">30天无限使用<br>适合持续运营</p>
+      <button class="btn btn-success btn-sm" onclick="buyAiPackage('ai_monthly')" style="width:100%;justify-content:center;">购买</button>
+    </div>
+    <div style="border:2px solid #e5e7eb;border-radius:12px;padding:24px;text-align:center;" onmouseover="this.style.borderColor='#2563eb'" onmouseout="this.style.borderColor='#e5e7eb'">
+      <div style="font-size:28px;margin-bottom:8px;">🌸</div>
+      <h3 style="font-size:18px;margin-bottom:8px;">季套餐</h3>
+      <div style="font-size:32px;font-weight:700;color:#2563eb;margin:12px 0;">¥1,688</div>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:16px;">90天无限使用<br>最省心方案</p>
+      <button class="btn btn-primary btn-sm" onclick="buyAiPackage('ai_quarterly')" style="width:100%;justify-content:center;">购买</button>
+    </div>
+    <div style="border:2px solid #e5e7eb;border-radius:12px;padding:24px;text-align:center;" onmouseover="this.style.borderColor='#2563eb'" onmouseout="this.style.borderColor='#e5e7eb'">
+      <div style="font-size:28px;margin-bottom:8px;">🎆</div>
+      <h3 style="font-size:18px;margin-bottom:8px;">年套餐</h3>
+      <div style="font-size:32px;font-weight:700;color:#2563eb;margin:12px 0;">¥5,888</div>
+      <p style="color:#6b7280;font-size:13px;margin-bottom:16px;">365天无限使用<br>企业级生产力</p>
+      <button class="btn btn-primary btn-sm" onclick="buyAiPackage('ai_yearly')" style="width:100%;justify-content:center;">购买</button>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>📜 订单记录</h3>
+  <div id="order-history"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
 </div>
 
 <div class="card" id="payment-status" style="display:none;">
@@ -890,34 +1000,59 @@ export function companyPackagesPage(user: any): string {
 
 <script>
 async function buyPackage(packageType) {
-  const names = { ai_daily: 'AI 日套餐 ¥66', ai_monthly: 'AI 月套餐 ¥666' };
+  const names = { enterprise_yearly: '企业版年费 ¥1,688' };
   const btn = event.target;
   btn.disabled = true; btn.textContent = '⏳ 创建订单...';
-  
   const r = await api('/payment/create', {
     method: 'POST',
     body: JSON.stringify({ packageType })
   });
-  
-  if (r.success) {
-    const d = r.data;
-    // 显示支付信息
-    document.getElementById('payment-status').style.display = 'block';
-    document.getElementById('payment-content').innerHTML = 
-      '<p>订单号：<strong>' + d.orderNo + '</strong></p>' +
-      '<p>金额：<strong>¥' + d.amount + '</strong></p>' +
-      '<div style="margin:20px 0;text-align:center;">' +
-        (d.qrcode ? '<img src="' + d.qrcode + '" style="width:200px;height:200px;border:1px solid #e5e7eb;border-radius:8px;"><p style="font-size:14px;color:#6b7280;margin-top:8px;">请使用微信/支付宝扫码支付</p>' : '') +
-        '<p><a href="' + (d.payUrl || '#') + '" target="_blank" class="btn btn-success" style="justify-content:center;' + (d.qrcode ? 'margin-top:8px;' : '') + '">🔗 去支付</a></p>' +
-      '</div>' +
-      '<p style="font-size:13px;color:#6b7280;text-align:center;">支付完成后请等待几秒，系统自动生效</p>';
-    showToast('订单已创建，请完成支付');
-  } else {
-    showToast(r.error || '创建订单失败', 'error');
-  }
-  
-  btn.disabled = false; btn.textContent = '立即购买';
+  if (r.success) showPayment(r, names[packageType]);
+  else showToast(r.error || '创建失败', 'error');
+  btn.disabled = false; btn.textContent = '立即续费';
 }
+
+async function buyAiPackage(packageType) {
+  const names = { ai_daily: 'AI 日套餐 ¥66', ai_monthly: 'AI 月套餐 ¥666', ai_quarterly: 'AI 季套餐 ¥1,688', ai_yearly: 'AI 年套餐 ¥5,888' };
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '⏳ 创建订单...';
+  const r = await api('/payment/create', {
+    method: 'POST',
+    body: JSON.stringify({ packageType })
+  });
+  if (r.success) showPayment(r, names[packageType]);
+  else showToast(r.error || '创建失败', 'error');
+  btn.disabled = false; btn.textContent = '购买';
+}
+
+function showPayment(r, name) {
+  const d = r.data;
+  document.getElementById('payment-status').style.display = 'block';
+  document.getElementById('payment-content').innerHTML =
+    '<p>📦 <strong>' + name + '</strong></p>' +
+    '<p>订单号：<strong>' + d.orderNo + '</strong></p>' +
+    '<p>金额：<strong class="text-primary">¥' + d.amount + '</strong></p>' +
+    '<div style="margin:20px 0;text-align:center;">' +
+      (d.qrcode ? '<img src="' + d.qrcode + '" style="width:200px;height:200px;border:1px solid #e5e7eb;border-radius:8px;"><p style="font-size:14px;color:#6b7280;margin-top:8px;">请使用微信/支付宝扫码支付</p>' : '') +
+      '<p><a href="' + (d.payUrl || '#') + '" target="_blank" class="btn btn-success" style="justify-content:center;' + (d.qrcode ? 'margin-top:8px;' : '') + '">🔗 去支付</a></p>' +
+    '</div>' +
+    '<p style="font-size:13px;color:#6b7280;text-align:center;">支付完成后请等待几秒，系统自动生效</p>';
+  showToast('订单已创建，请完成支付');
+}
+
+async function loadOrders() {
+  const r = await api('/payment/orders');
+  if (!r.success) return;
+  const items = r.data?.items || [];
+  const statusBadges = { pending: '<span class="badge badge-warning">待支付</span>', paid: '<span class="badge badge-success">已支付</span>', failed: '<span class="badge badge-danger">失败</span>', refunded: '<span class="badge">已退款</span>' };
+  const typeNames = { ai_daily: 'AI日套餐', ai_monthly: 'AI月套餐', ai_quarterly: 'AI季套餐', ai_yearly: 'AI年套餐', enterprise_yearly: '企业版年费' };
+  document.getElementById('order-history').innerHTML = items.length
+    ? '<table><tr><th>订单号</th><th>类型</th><th>金额</th><th>状态</th><th>时间</th></tr>' +
+      items.map(i => '<tr><td style="font-size:12px;">' + i.order_no + '</td><td>' + (typeNames[i.order_type] || i.order_type) + '</td><td>¥' + (i.amount / 100).toFixed(2) + '</td><td>' + (statusBadges[i.payment_status] || i.payment_status) + '</td><td>' + formatDate(i.created_at) + '</td></tr>').join('') + '</table>'
+    : '<div class="empty"><p>暂无订单记录</p></div>';
+}
+
+loadOrders();
 </script>
 ${navScript('packages')}`;
 

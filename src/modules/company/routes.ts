@@ -630,6 +630,67 @@ companyRouter.post('/operators', async (c) => {
   }
 });
 
+// PUT /api/company/operators/:id - 更新子账号
+companyRouter.put('/operators/:id', async (c) => {
+  try {
+    const user = c.get('user');
+    const opId = c.req.param('id');
+    const { displayName, password } = await c.req.json<{ displayName?: string; password?: string }>();
+
+    if (!displayName && !password) {
+      return c.json({ success: false, error: '请提供要更新的字段' } as ApiResponse, 400);
+    }
+
+    let sql = "UPDATE sys_company_operator SET updated_at = datetime('now')";
+    const params: any[] = [];
+
+    if (displayName) { sql += ', display_name = ?'; params.push(displayName); }
+    if (password) {
+      const encoder = new TextEncoder();
+      const pwdData = encoder.encode(password + 'llmgeo_salt_2024');
+      const hashBuf = await crypto.subtle.digest('SHA-256', pwdData);
+      const hashArr = Array.from(new Uint8Array(hashBuf));
+      sql += ', password_hash = ?';
+      params.push(hashArr.map(b => b.toString(16).padStart(2, '0')).join(''));
+    }
+
+    // 确保只在当前企业下更新
+    const company = await c.env.DB.prepare(
+      `SELECT id FROM sys_company WHERE tenant_id = ?`
+    ).bind(user.tenantId).first<{ id: string }>();
+    if (!company) return c.json({ success: false, error: '企业不存在' } as ApiResponse, 404);
+
+    sql += ' WHERE id = ? AND company_id = ?';
+    params.push(opId, company.id);
+
+    await c.env.DB.prepare(sql).bind(...params).run();
+    return c.json({ success: true, message: '子账号已更新' });
+  } catch (e: any) {
+    return c.json({ success: false, error: '更新失败' } as ApiResponse, 500);
+  }
+});
+
+// DELETE /api/company/operators/:id - 删除子账号
+companyRouter.delete('/operators/:id', async (c) => {
+  try {
+    const user = c.get('user');
+    const opId = c.req.param('id');
+
+    const company = await c.env.DB.prepare(
+      `SELECT id FROM sys_company WHERE tenant_id = ?`
+    ).bind(user.tenantId).first<{ id: string }>();
+    if (!company) return c.json({ success: false, error: '企业不存在' } as ApiResponse, 404);
+
+    await c.env.DB.prepare(`DELETE FROM sys_company_operator WHERE id = ? AND company_id = ?`)
+      .bind(opId, company.id).run();
+    await c.env.DB.prepare(`DELETE FROM sys_user_role WHERE user_id = ?`).bind(opId).run();
+
+    return c.json({ success: true, message: '子账号已删除' });
+  } catch (e: any) {
+    return c.json({ success: false, error: '删除失败' } as ApiResponse, 500);
+  }
+});
+
 // ========== 社媒授权 ==========
 
 // GET /api/company/social - 获取已绑定的社媒账号

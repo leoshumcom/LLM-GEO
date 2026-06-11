@@ -15,11 +15,12 @@ paymentRouter.post('/create', authMiddleware, requireRole('company'), async (c) 
     const { packageType } = await c.req.json<{ packageType: string }>();
 
     // 套餐定价
-    const packages: Record<string, { name: string; price: number }> = {
-      ai_daily: { name: 'AI 日套餐', price: 66 },
-      ai_monthly: { name: 'AI 月套餐', price: 666 },
-      ai_quarterly: { name: 'AI 季套餐', price: 1688 },
-      ai_yearly: { name: 'AI 年套餐', price: 5888 },
+    const packages: Record<string, { name: string; price: number; type: 'ai' | 'enterprise' }> = {
+      ai_daily: { name: 'AI 日套餐', price: 66, type: 'ai' },
+      ai_monthly: { name: 'AI 月套餐', price: 666, type: 'ai' },
+      ai_quarterly: { name: 'AI 季套餐', price: 1688, type: 'ai' },
+      ai_yearly: { name: 'AI 年套餐', price: 5888, type: 'ai' },
+      enterprise_yearly: { name: '企业版年费', price: 1688, type: 'enterprise' },
     };
 
     const pkg = packages[packageType];
@@ -137,30 +138,54 @@ paymentRouter.post('/notify', async (c) => {
       `UPDATE finance_order SET payment_status = 'paid', paid_at = datetime('now'), transaction_id = ?, updated_at = datetime('now') WHERE id = ?`
     ).bind(payOrderId || '', order.id).run();
 
-    // 根据套餐类型更新企业 AI 套餐
+    // 根据套餐类型更新
     const pkgTypeMap: Record<string, string> = {
       ai_daily: '+1 days',
       ai_monthly: '+30 days',
       ai_quarterly: '+90 days',
       ai_yearly: '+365 days',
+      enterprise_yearly: '+365 days',
     };
-    const duration = pkgTypeMap[order.order_type];
     const pkgNameMap: Record<string, string> = {
       ai_daily: 'daily',
       ai_monthly: 'monthly',
       ai_quarterly: 'quarterly',
       ai_yearly: 'yearly',
+      enterprise_yearly: '', // 企业版不修改 ai_package_type
     };
+
+    const duration = pkgTypeMap[order.order_type];
     const pkg = pkgNameMap[order.order_type];
 
-    if (duration && pkg) {
+    if (order.order_type === 'enterprise_yearly') {
+      // 企业版年费：延长 membership_expires_at
+      await c.env.DB.prepare(
+        `UPDATE sys_company SET
+          membership_expires_at = COALESCE(
+            CASE WHEN membership_expires_at > datetime('now')
+              THEN datetime(membership_expires_at, ?)
+              ELSE datetime('now', ?)
+            END,
+            datetime('now', ?)
+          ),
+          updated_at = datetime('now')
+         WHERE tenant_id = ?`
+      ).bind(duration, duration, duration, order.tenant_id).run();
+    } else if (duration && pkg) {
+      // AI 套餐：延长 ai_package_expires_at（累加）
       await c.env.DB.prepare(
         `UPDATE sys_company SET
           ai_package_type = ?,
-          ai_package_expires_at = datetime('now', ?),
+          ai_package_expires_at = COALESCE(
+            CASE WHEN ai_package_expires_at > datetime('now')
+              THEN datetime(ai_package_expires_at, ?)
+              ELSE datetime('now', ?)
+            END,
+            datetime('now', ?)
+          ),
           updated_at = datetime('now')
          WHERE tenant_id = ?`
-      ).bind(pkg, duration, order.tenant_id).run();
+      ).bind(pkg, duration, duration, duration, order.tenant_id).run();
     }
 
     // 发送支付成功邮件通知（非阻塞）
