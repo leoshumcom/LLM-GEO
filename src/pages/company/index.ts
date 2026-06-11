@@ -12,7 +12,8 @@ const NAV = `
 <a href="/company/ai" data-nav="ai">🤖 AI 内容生成</a>
 <a href="/company/publish" data-nav="publish">📤 发布记录</a>
 <a href="/company/sites" data-nav="sites">🌐 站群发布</a>
-<a href="/company/social" data-nav="social">🔗 社媒绑定</a>
+<a href="/company/social" data-nav="social">🔗 发布渠道</a>
+<a href="/company/ai-config" data-nav="ai_config">⚙️ 模型配置</a>
 <a href="/company/profile" data-nav="profile">🏢 企业资料</a>
 <a href="/company/operators" data-nav="operators">👥 子账号</a>
 <a href="/company/media" data-nav="media">🖼️ 素材库</a>
@@ -357,52 +358,138 @@ ${navScript('profile')}`;
 
 // ===== 社媒绑定 =====
 export function companySocialPage(user: any): string {
-  const platformNames: Record<string, string> = {
-    twitter: 'Twitter (X)',
-    facebook: 'Facebook',
-    linkedin: 'LinkedIn',
-  };
-
   const body = `
 <div class="card">
-  <h3>社媒账号绑定</h3>
-  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">绑定社媒账号后，AI 生成的内容可自动发布到对应平台。</p>
-  <div id="social-list"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
+  <h3>📡 发布渠道管理</h3>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">配置发布渠道后，AI 生成的内容可通过这些渠道发布。支持手动复制、自定义 API、WordPress 站群三种方式。</p>
+  <div id="channel-list"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
 </div>
 
 <div class="card">
-  <h3>绑定新账号</h3>
-  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">点击下方平台按钮，跳转到对应平台进行授权。</p>
-  <div style="display:flex;gap:12px;">
-    <a class="btn btn-outline" onclick="showToast('请先在系统配置中设置Twitter API凭证', 'error')">🐦 Twitter</a>
-    <a class="btn btn-outline" onclick="showToast('请先在系统配置中设置Facebook API凭证', 'error')">📘 Facebook</a>
-    <a class="btn btn-outline" onclick="showToast('请先在系统配置中设置LinkedIn API凭证', 'error')">💼 LinkedIn</a>
+  <h3>➕ 添加发布渠道</h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
+    <div class="card" style="cursor:pointer;text-align:center;" onclick="showChannelModal('wordpress')">
+      <div style="font-size:40px;margin-bottom:8px;">🌐</div>
+      <strong>WordPress</strong>
+      <p style="font-size:12px;color:#6b7280;">通过 REST API 发布到 WP 站点</p>
+    </div>
+    <div class="card" style="cursor:pointer;text-align:center;" onclick="showChannelModal('custom_api')">
+      <div style="font-size:40px;margin-bottom:8px;">🔌</div>
+      <strong>自定义 API</strong>
+      <p style="font-size:12px;color:#6b7280;">通过 HTTP API 发布到任意平台</p>
+    </div>
+    <div class="card" style="cursor:pointer;text-align:center;" onclick="showChannelModal('manual_copy')">
+      <div style="font-size:40px;margin-bottom:8px;">📋</div>
+      <strong>手动复制</strong>
+      <p style="font-size:12px;color:#6b7280;">生成内容后手动复制粘贴发布</p>
+    </div>
+  </div>
+</div>
+
+<!-- 添加渠道弹窗 -->
+<div class="modal" id="channelModal">
+  <div class="modal-content" style="max-width:500px;">
+    <span class="close" onclick="closeChModal()">&times;</span>
+    <h3 id="channelModalTitle">添加发布渠道</h3>
+    <div class="form-group">
+      <label>渠道名称</label>
+      <input type="text" id="chDisplayName" placeholder="例如：我的博客站">
+    </div>
+    <div id="chExtraFields">
+      <div class="form-group">
+        <label>API 地址</label>
+        <input type="text" id="chApiUrl" placeholder="https://example.com/wp-json/wp/v2/posts">
+      </div>
+      <div class="form-group">
+        <label>API Key / 应用密码</label>
+        <input type="text" id="chApiKey" placeholder="输入 API 令牌或密码">
+      </div>
+      <div class="form-group">
+        <label>API Secret（可选）</label>
+        <input type="text" id="chApiSecret" placeholder="输入额外密钥">
+      </div>
+    </div>
+    <div id="chManualHint" style="display:none;background:#fefce8;padding:12px;border-radius:8px;color:#854d0e;font-size:14px;">
+      手动复制渠道无需配置，在发布时系统会提供可直接复制的内容模板。
+    </div>
+    <button class="btn btn-primary" onclick="createChannel()">确认添加</button>
   </div>
 </div>
 
 <script>
-async function loadSocial() {
+let currentChannelType = '';
+
+function showChannelModal(type) {
+  currentChannelType = type;
+  const names = { wordpress: 'WordPress', custom_api: '自定义 API', manual_copy: '手动复制' };
+  document.getElementById('channelModalTitle').textContent = '添加 ' + names[type] + ' 渠道';
+
+  const extra = document.getElementById('chExtraFields');
+  const hint = document.getElementById('chManualHint');
+
+  if (type === 'manual_copy') {
+    extra.style.display = 'none';
+    hint.style.display = 'block';
+  } else {
+    extra.style.display = 'block';
+    hint.style.display = 'none';
+  }
+
+  document.getElementById('chApiUrl').value = type === 'wordpress' ? 'https://' : '';
+  document.getElementById('chApiKey').value = '';
+  document.getElementById('chApiSecret').value = '';
+  document.getElementById('chDisplayName').value = '';
+  document.getElementById('channelModal').classList.add('show');
+}
+function closeChModal() { document.getElementById('channelModal').classList.remove('show'); }
+
+async function createChannel() {
+  const name = document.getElementById('chDisplayName').value;
+  if (!name) return showToast('请填写渠道名称', 'error');
+
+  const body = {
+    platform: currentChannelType,
+    displayName: name,
+    apiKey: document.getElementById('chApiKey').value,
+    apiSecret: document.getElementById('chApiSecret').value,
+    apiBaseUrl: document.getElementById('chApiUrl').value,
+  };
+
+  const r = await api('/company/social/channel', { method: 'POST', body: JSON.stringify(body) });
+  if (r.success) {
+    showToast('渠道添加成功');
+    closeChModal();
+    loadChannels();
+  } else {
+    showToast(r.error || '添加失败', 'error');
+  }
+}
+
+async function loadChannels() {
   const r = await api('/company/social');
   if (!r.success) return;
   const items = r.data;
-  document.getElementById('social-list').innerHTML = items.length
-    ? '<table><tr><th>平台</th><th>账号</th><th>状态</th><th>绑定时间</th><th>操作</th></tr>' +
-      items.map(i => '<tr><td>' + (${JSON.stringify(platformNames)}[i.platform] || i.platform) + '</td><td>' + (i.platform_user_name || '-') + '</td><td>' + '${statusBadge('' + (i.status === 'active' ? 'active' : 'pending'))}' + '</td><td>' + formatDate(i.created_at) + '</td><td><button class="btn btn-danger btn-sm" onclick="unbind(\'' + i.platform + '\')">解绑</button></td></tr>').join('') + '</table>'
-    : '<div class="empty"><p>尚未绑定任何社媒账号</p></div>';
+  const channelIcons = { wordpress: '🌐', custom_api: '🔌', manual_copy: '📋' };
+  const channelNames = { wordpress: 'WordPress', custom_api: '自定义 API', manual_copy: '手动复制' };
+
+  document.getElementById('channel-list').innerHTML = items.length
+    ? '<table><tr><th>渠道</th><th>名称</th><th>状态</th><th>创建时间</th><th>操作</th></tr>' +
+      items.map(i => '<tr><td>' + (channelIcons[i.platform] || '🔗') + ' ' + (channelNames[i.platform] || i.platform) + '</td><td>' + (i.platform_user_name || '-') + '</td><td>' + '${statusBadge('' + (i.status === 'active' ? 'active' : 'pending'))}' + '</td><td>' + formatDate(i.created_at) + '</td><td><button class="btn btn-danger btn-sm" onclick="unbind(\'' + i.platform + '\')">删除</button></td></tr>').join('') + '</table>'
+    : '<div class="empty"><p>暂无发布渠道，请在上方添加</p></div>';
 }
 
 async function unbind(platform) {
-  if (!confirm('确定解绑 ' + platform + '？')) return;
+  if (!confirm('确定删除此发布渠道？')) return;
   const r = await api('/company/social/' + platform, { method: 'DELETE' });
-  if (r.success) { showToast('解绑成功'); loadSocial(); }
-  else showToast(r.error || '解绑失败', 'error');
+  if (r.success) { showToast('删除成功'); loadChannels(); }
+  else showToast(r.error || '删除失败', 'error');
 }
 
-loadSocial();
+loadChannels();
 </script>
 ${navScript('social')}`;
 
-  return pageLayout('社媒绑定', NAV, SIDEBAR_LOGO,
+  return pageLayout('发布渠道', NAV, SIDEBAR_LOGO,
     `<span>${user.company_name || ''}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
     body);
 }
@@ -711,6 +798,107 @@ async function buyPackage(packageType) {
 ${navScript('packages')}`;
 
   return pageLayout('购买套餐', NAV, SIDEBAR_LOGO,
+    `<span>${user.company_name || ''}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
+    body);
+}
+
+// ===== AI 模型配置 =====
+export function companyAiConfigPage(user: any): string {
+  const body = `
+<div class="card">
+  <h3>🤖 AI 模型配置</h3>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">
+    配置自定义 AI 模型 API Key。如果使用平台公共套餐则无需配置。
+    支持的模型厂商：
+  </p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+    <span class="badge badge-info">DeepSeek</span>
+    <span class="badge badge-info">豆包</span>
+    <span class="badge badge-info">通义千问</span>
+    <span class="badge badge-info">ChatGPT</span>
+    <span class="badge badge-info">Agnes</span>
+  </div>
+</div>
+
+<div class="card">
+  <h3>模型列表</h3>
+  <div id="model-config-list"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
+</div>
+
+<div class="card">
+  <h3>添加/编辑模型配置</h3>
+  <div class="form-group">
+    <label>模型厂商</label>
+    <select id="mcProvider">
+      <option value="agnes">Agnes AI</option>
+      <option value="deepseek">DeepSeek</option>
+      <option value="doubao">豆包</option>
+      <option value="tongyi">通义千问</option>
+      <option value="chatgpt">ChatGPT</option>
+      <option value="gemini">Gemini</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label>API Key</label>
+    <input type="password" id="mcApiKey" placeholder="sk-...">
+  </div>
+  <div class="form-group">
+    <label>模型名称（可选）</label>
+    <input type="text" id="mcModelName" placeholder="如 gpt-4o, deepseek-chat">
+  </div>
+  <div class="form-group">
+    <label>API 地址（可选）</label>
+    <input type="text" id="mcApiUrl" placeholder="https://api.openai.com/v1">
+  </div>
+  <button class="btn btn-primary" onclick="saveModelConfig()">保存配置</button>
+</div>
+
+<script>
+async function loadModelConfigs() {
+  const r = await api('/company/ai/config');
+  if (!r.success) return;
+  const items = r.data;
+  const providerNames = { agnes: 'Agnes AI', deepseek: 'DeepSeek', doubao: '豆包', tongyi: '通义千问', chatgpt: 'ChatGPT', gemini: 'Gemini' };
+  document.getElementById('model-config-list').innerHTML = items.length
+    ? '<table><tr><th>厂商</th><th>模型</th><th>API 地址</th><th>状态</th><th>操作</th></tr>' +
+      items.map(i => '<tr><td>' + (providerNames[i.provider] || i.provider) + '</td><td>' + (i.model_name || '-') + '</td><td>' + (i.api_base_url || '默认') + '</td><td>' + '${statusBadge('active')}' + '</td><td><button class="btn btn-danger btn-sm" onclick="deleteModel(\'' + i.provider + '\')">删除</button></td></tr>').join('') + '</table>'
+    : '<div class="empty"><p>暂无自定义模型配置，使用平台公共套餐即可</p></div>';
+}
+
+async function saveModelConfig() {
+  const provider = document.getElementById('mcProvider').value;
+  const apiKey = document.getElementById('mcApiKey').value;
+  if (!apiKey) return showToast('请填写 API Key', 'error');
+  const modelName = document.getElementById('mcModelName').value;
+  const apiBaseUrl = document.getElementById('mcApiUrl').value;
+
+  const r = await api('/company/ai/config/' + provider, {
+    method: 'PUT',
+    body: JSON.stringify({ apiKey, modelName: modelName || undefined, apiBaseUrl: apiBaseUrl || undefined })
+  });
+  if (r.success) {
+    showToast('配置已保存');
+    document.getElementById('mcApiKey').value = '';
+    document.getElementById('mcModelName').value = '';
+    document.getElementById('mcApiUrl').value = '';
+    loadModelConfigs();
+  } else {
+    showToast(r.error || '保存失败', 'error');
+  }
+}
+
+async function deleteModel(provider) {
+  if (!confirm('确定删除 ' + provider + ' 的配置？')) return;
+  const r = await api('/company/ai/config/' + provider, { method: 'DELETE' });
+  if (r.success) { showToast('已删除'); loadModelConfigs(); }
+  else showToast(r.error || '删除失败', 'error');
+}
+
+loadModelConfigs();
+</script>
+${navScript('ai_config')}`;
+
+  return pageLayout('AI 模型配置', NAV, SIDEBAR_LOGO,
     `<span>${user.company_name || ''}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
     body);
 }

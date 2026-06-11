@@ -21,6 +21,7 @@ import {
   companyMediaPage,
   companySitesPage,
   companyPackagesPage,
+  companyAiConfigPage,
 } from './company/index';
 // 代理商页面
 import {
@@ -87,6 +88,12 @@ pagesRouter.get('/company/packages', authMiddleware, requireRole('company', 'ope
   const user = c.get('user') as JwtPayload;
   const company = await getUserData(c.env.DB, user);
   return c.html(companyPackagesPage(company));
+});
+
+pagesRouter.get('/company/ai-config', authMiddleware, requireRole('company', 'operator'), async (c) => {
+  const user = c.get('user') as JwtPayload;
+  const company = await getUserData(c.env.DB, user);
+  return c.html(companyAiConfigPage(company));
 });
 
 // ========== 企业端 ==========

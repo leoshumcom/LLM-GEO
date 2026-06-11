@@ -603,6 +603,45 @@ companyRouter.get('/social', async (c) => {
   }
 });
 
+// POST /api/company/social/channel - 创建手动发布渠道
+// 替代 OAuth 方式：企业手动输入 API Key / 令牌
+companyRouter.post('/social/channel', async (c) => {
+  try {
+    const user = c.get('user');
+    const { platform, displayName, apiKey, apiSecret, apiBaseUrl } = await c.req.json();
+
+    if (!platform || !displayName) {
+      return c.json({ success: false, error: '请填写平台名称和显示名称' } as ApiResponse, 400);
+    }
+
+    const validPlatforms = ['wordpress', 'custom_api', 'manual_copy'];
+    if (!validPlatforms.includes(platform)) {
+      return c.json({ success: false, error: '无效平台类型，仅支持: wordpress, custom_api, manual_copy' } as ApiResponse, 400);
+    }
+
+    // 检查是否已存在同平台渠道
+    const existing = await c.env.DB.prepare(
+      `SELECT id FROM company_social_oauth WHERE tenant_id = ? AND platform = ?`
+    ).bind(user.tenantId, platform).first();
+
+    if (existing) {
+      return c.json({ success: false, error: `渠道 ${platform} 已存在，请先删除再创建` } as ApiResponse, 400);
+    }
+
+    const id = crypto.randomUUID();
+    const tokenData = JSON.stringify({ apiKey: apiKey || '', apiSecret: apiSecret || '', apiBaseUrl: apiBaseUrl || '' });
+
+    await c.env.DB.prepare(
+      `INSERT INTO company_social_oauth (id, tenant_id, platform, platform_user_name, access_token, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'active', datetime('now'), datetime('now'))`
+    ).bind(id, user.tenantId, platform, displayName, tokenData).run();
+
+    return c.json({ success: true, message: '发布渠道创建成功' });
+  } catch (e: any) {
+    return c.json({ success: false, error: '创建失败: ' + e.message } as ApiResponse, 500);
+  }
+});
+
 // DELETE /api/company/social/:platform - 解绑社媒账号
 companyRouter.delete('/social/:platform', async (c) => {
   try {
@@ -616,6 +655,72 @@ companyRouter.delete('/social/:platform', async (c) => {
     return c.json({ success: true, message: '社媒账号已解绑' });
   } catch (e: any) {
     return c.json({ success: false, error: '解绑失败' } as ApiResponse, 500);
+  }
+});
+
+// ========== AI 模型配置 ==========
+
+// GET /api/company/ai/config - 获取模型配置
+companyRouter.get('/ai/config', async (c) => {
+  try {
+    const user = c.get('user');
+    const configs = await c.env.DB.prepare(
+      `SELECT provider, model_name, api_base_url, is_platform_package, status
+       FROM ai_model_config WHERE tenant_id = ?`
+    ).bind(user.tenantId).all();
+
+    return c.json({ success: true, data: configs.results || [] });
+  } catch (e: any) {
+    return c.json({ success: false, error: '获取模型配置失败' } as ApiResponse, 500);
+  }
+});
+
+// PUT /api/company/ai/config/:provider - 更新/创建模型配置
+companyRouter.put('/ai/config/:provider', async (c) => {
+  try {
+    const user = c.get('user');
+    const provider = c.req.param('provider');
+    const { apiKey, modelName, apiBaseUrl } = await c.req.json();
+
+    if (!apiKey) {
+      return c.json({ success: false, error: '请填写 API Key' } as ApiResponse, 400);
+    }
+
+    const existing = await c.env.DB.prepare(
+      `SELECT id FROM ai_model_config WHERE tenant_id = ? AND provider = ?`
+    ).bind(user.tenantId, provider).first();
+
+    if (existing) {
+      await c.env.DB.prepare(
+        `UPDATE ai_model_config SET api_key = ?, model_name = ?, api_base_url = ?, status = 'active', updated_at = datetime('now')
+         WHERE tenant_id = ? AND provider = ?`
+      ).bind(apiKey, modelName || null, apiBaseUrl || null, user.tenantId, provider).run();
+    } else {
+      await c.env.DB.prepare(
+        `INSERT INTO ai_model_config (id, tenant_id, provider, api_key, model_name, api_base_url, is_platform_package, status, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, 0, 'active', datetime('now'), datetime('now'))`
+      ).bind(crypto.randomUUID(), user.tenantId, provider, apiKey, modelName || null, apiBaseUrl || null).run();
+    }
+
+    return c.json({ success: true, message: '模型配置已保存' });
+  } catch (e: any) {
+    return c.json({ success: false, error: '保存失败: ' + e.message } as ApiResponse, 500);
+  }
+});
+
+// DELETE /api/company/ai/config/:provider - 删除模型配置
+companyRouter.delete('/ai/config/:provider', async (c) => {
+  try {
+    const user = c.get('user');
+    const provider = c.req.param('provider');
+
+    await c.env.DB.prepare(
+      `DELETE FROM ai_model_config WHERE tenant_id = ? AND provider = ?`
+    ).bind(user.tenantId, provider).run();
+
+    return c.json({ success: true, message: '模型配置已删除' });
+  } catch (e: any) {
+    return c.json({ success: false, error: '删除失败' } as ApiResponse, 500);
   }
 });
 
