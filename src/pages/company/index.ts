@@ -13,6 +13,7 @@ const NAV = `
 <a href="/company/publish" data-nav="publish">📤 发布记录</a>
 <a href="/company/sites" data-nav="sites">🌐 站群发布</a>
 <a href="/company/social" data-nav="social">🔗 社媒 & 渠道</a>
+<a href="/company/reservations" data-nav="reservations">📋 增值预约</a>
 <a href="/company/ai-config" data-nav="ai_config">⚙️ 模型配置</a>
 <a href="/company/profile" data-nav="profile">🏢 企业资料</a>
 <a href="/company/operators" data-nav="operators">👥 子账号</a>
@@ -1022,6 +1023,116 @@ loadModelConfigs();
 ${navScript('ai_config')}`;
 
   return pageLayout('AI 模型配置', NAV, SIDEBAR_LOGO,
+    `<span>${user.company_name || ''}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
+    body);
+}
+
+// ===== 增值预约 =====
+const SERVICE_TYPES: Record<string, string> = {
+  '1': '① 关键词研究 & 拓展 — 深度挖掘高价值长尾关键词',
+  '2': '② 竞争对手 GEO 分析 — 解剖竞品排名策略和内容结构',
+  '3': '③ AI 内容策略定制 — 量身打造 SEO 友好的内容矩阵',
+  '4': '④ 多媒体内容制作 — 图片/视频/Infographic 一条龙',
+  '5': '⑤ 站群架构规划 — 多站点矩阵搭建与权重传递策略',
+  '6': '⑥ 外链建设服务 — 高质量 backlink 获取方案',
+  '7': '⑦ 数据报告 & 优化建议 — 定期排名追踪与策略调整',
+  '8': '⑧ 专属客户经理 — 一对一管家式服务',
+};
+
+export function companyReservationsPage(user: any): string {
+  const serviceOptions = Object.entries(SERVICE_TYPES)
+    .map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+
+  const body = `
+<div class="card">
+  <h3>📋 增值服务预约</h3>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">需要更深入的服务？提交预约，我们将与您联系。费用 ¥6.00/次（代理商代开自动抵扣）。</p>
+  <form onsubmit="submitReservation(event)" style="max-width:500px;">
+    <div class="form-group">
+      <label>服务类型</label>
+      <select id="svcType" required>${serviceOptions}</select>
+    </div>
+    <div class="form-group">
+      <label>联系人姓名</label>
+      <input type="text" id="svcName" required placeholder="您的姓名">
+    </div>
+    <div class="form-group">
+      <label>联系方式</label>
+      <input type="text" id="svcContact" required placeholder="手机号 / 邮箱 / 微信号">
+    </div>
+    <div class="form-group">
+      <label>需求描述（可选）</label>
+      <textarea id="svcRequirement" rows="3" placeholder="详细描述您的需求..."></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group">
+        <label>使用人数</label>
+        <select id="svcPeople">
+          <option value="1人">1人</option>
+          <option value="2-5人">2-5人</option>
+          <option value="5-10人">5-10人</option>
+          <option value="10人以上">10人以上</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>期望联系时间</label>
+        <input type="text" id="svcTime" placeholder="如：工作日上午">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">提交预约</button>
+  </form>
+</div>
+
+<div class="card">
+  <h3>我的预约记录</h3>
+  <div id="reservation-history"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
+</div>
+
+<script>
+async function submitReservation(e) {
+  e.preventDefault();
+  const btn = e.target.querySelector('button');
+  btn.disabled = true; btn.textContent = '⏳ 提交中...';
+  const r = await api('/company/reservations', {
+    method: 'POST',
+    body: JSON.stringify({
+      serviceType: document.getElementById('svcType').value,
+      applicantName: document.getElementById('svcName').value,
+      contact: document.getElementById('svcContact').value,
+      requirement: document.getElementById('svcRequirement').value,
+      peopleCount: document.getElementById('svcPeople').value,
+      expectedTime: document.getElementById('svcTime').value,
+    })
+  });
+  if (r.success) { showToast('预约已提交，我们会尽快联系您！'); e.target.reset(); loadReservations(); }
+  else showToast(r.error || '提交失败', 'error');
+  btn.disabled = false; btn.textContent = '提交预约';
+}
+
+async function loadReservations() {
+  const r = await api('/company/reservations');
+  if (!r.success) return;
+  const items = r.data?.items || [];
+  const statusBadges = { pending: '<span class="badge badge-warning">待处理</span>', contacted: '<span class="badge badge-info">已联系</span>', completed: '<span class="badge badge-success">已完成</span>', cancelled: '<span class="badge badge-danger">已取消</span>' };
+  document.getElementById('reservation-history').innerHTML = items.length
+    ? '<table><tr><th>服务类型</th><th>联系人</th><th>状态</th><th>提交时间</th><th>操作</th></tr>' +
+      items.map(i => '<tr><td>' + '${JSON.stringify(SERVICE_TYPES)}'[i.service_type]?.slice(0, 30) + '...' + '</td><td>' + i.applicant_name + '</td><td>' + (statusBadges[i.status] || i.status) + '</td><td>' + formatDate(i.created_at) + '</td><td>' +
+        (i.status === 'pending' ? '<button class="btn btn-danger btn-sm" onclick="cancelRes(\'' + i.id + '\')">取消</button>' : '-') + '</td></tr>').join('') + '</table>'
+    : '<div class="empty"><p>暂无预约记录，请在上方提交</p></div>';
+}
+
+async function cancelRes(id) {
+  if (!confirm('确定取消此预约？')) return;
+  const r = await api('/company/reservations/' + id, { method: 'DELETE' });
+  if (r.success) { showToast('已取消'); loadReservations(); }
+  else showToast(r.error || '取消失败', 'error');
+}
+
+loadReservations();
+</script>
+${navScript('reservations')}`;
+
+  return pageLayout('增值预约', NAV, SIDEBAR_LOGO,
     `<span>${user.company_name || ''}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
     body);
 }

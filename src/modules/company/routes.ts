@@ -510,6 +510,50 @@ companyRouter.post('/reservations', async (c) => {
   }
 });
 
+// GET /api/company/reservations - 获取预约历史
+companyRouter.get('/reservations', async (c) => {
+  try {
+    const user = c.get('user');
+    const page = parseInt(c.req.query('page') || '1');
+    const pageSize = Math.min(parseInt(c.req.query('pageSize') || '20'), 100);
+    const offset = (page - 1) * pageSize;
+
+    const total = await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt FROM reservation_form WHERE tenant_id = ?`
+    ).bind(user.tenantId).first();
+    const items = await c.env.DB.prepare(
+      `SELECT id, service_type, applicant_name, contact, requirement, people_count, status, admin_notes, created_at, updated_at
+       FROM reservation_form WHERE tenant_id = ?
+       ORDER BY created_at DESC LIMIT ? OFFSET ?`
+    ).bind(user.tenantId, pageSize, offset).all();
+
+    return c.json({
+      success: true,
+      data: {
+        items: items.results || [],
+        total: total?.cnt || 0,
+        page, pageSize,
+      }
+    });
+  } catch (e: any) {
+    return c.json({ success: false, error: '获取预约记录失败' } as ApiResponse, 500);
+  }
+});
+
+// DELETE /api/company/reservations/:id - 取消预约
+companyRouter.delete('/reservations/:id', async (c) => {
+  try {
+    const user = c.get('user');
+    const id = c.req.param('id');
+    await c.env.DB.prepare(
+      `UPDATE reservation_form SET status = 'cancelled', updated_at = datetime('now') WHERE id = ? AND tenant_id = ?`
+    ).bind(id, user.tenantId).run();
+    return c.json({ success: true, message: '预约已取消' });
+  } catch (e: any) {
+    return c.json({ success: false, error: '取消失败' } as ApiResponse, 500);
+  }
+});
+
 // ========== 子账号管理 ==========
 
 // GET /api/company/operators - 获取运营子账号列表

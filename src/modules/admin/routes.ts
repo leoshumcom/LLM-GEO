@@ -502,3 +502,70 @@ adminRouter.get('/logs', async (c) => {
   }
 });
 
+// ========== 增值预约工单管理 ==========
+// GET /api/admin/reservations - 获取所有预约工单
+adminRouter.get('/reservations', async (c) => {
+  try {
+    const page = parseInt(c.req.query('page') || '1');
+    const pageSize = Math.min(parseInt(c.req.query('pageSize') || '20'), 100);
+    const offset = (page - 1) * pageSize;
+    const status = c.req.query('status') || '';
+
+    let whereClause = '';
+    const params: any[] = [];
+    if (status) {
+      whereClause = ' WHERE rf.status = ?';
+      params.push(status);
+    }
+
+    const total = await c.env.DB.prepare(
+      'SELECT COUNT(*) as cnt FROM reservation_form rf' + whereClause
+    ).bind(...params).first();
+
+    const items = await c.env.DB.prepare(
+      `SELECT rf.id, rf.service_type, rf.applicant_name, rf.contact, rf.requirement,
+              rf.people_count, rf.status, rf.admin_notes, rf.created_at, rf.updated_at,
+              sc.company_name
+       FROM reservation_form rf
+       LEFT JOIN sys_company sc ON rf.tenant_id = sc.tenant_id` + whereClause +
+      ' ORDER BY rf.created_at DESC LIMIT ? OFFSET ?'
+    ).bind(...params, pageSize, offset).all();
+
+    return c.json({
+      success: true,
+      data: {
+        items: items.results || [],
+        total: total?.cnt || 0,
+        page, pageSize,
+        totalPages: Math.ceil((total?.cnt || 0) / pageSize)
+      }
+    });
+  } catch (e) {
+    return c.json({ success: false, error: '获取预约工单失败' }, 500);
+  }
+});
+
+// PUT /api/admin/reservations/:id - 更新工单状态/备注
+adminRouter.put('/reservations/:id', async (c) => {
+  try {
+    const id = c.req.param('id');
+    const { status, adminNotes } = await c.req.json<{ status?: string; adminNotes?: string }>();
+
+    if (!status && adminNotes === undefined) {
+      return c.json({ success: false, error: '请提供要更新的字段' }, 400);
+    }
+
+    let sql = "UPDATE reservation_form SET updated_at = datetime('now')";
+    const params: any[] = [];
+    if (status) { sql += ', status = ?'; params.push(status); }
+    if (adminNotes !== undefined) { sql += ', admin_notes = ?'; params.push(adminNotes); }
+    sql += ' WHERE id = ?';
+    params.push(id);
+
+    await c.env.DB.prepare(sql).bind(...params).run();
+    return c.json({ success: true, message: '工单已更新' });
+  } catch (e) {
+    return c.json({ success: false, error: '更新工单失败' }, 500);
+  }
+});
+

@@ -22,6 +22,7 @@ import {
   companySitesPage,
   companyPackagesPage,
   companyAiConfigPage,
+  companyReservationsPage,
 } from './company/index';
 // 代理商页面
 import {
@@ -94,6 +95,12 @@ pagesRouter.get('/company/ai-config', authMiddleware, requireRole('company', 'op
   const user = c.get('user') as JwtPayload;
   const company = await getUserData(c.env.DB, user);
   return c.html(companyAiConfigPage(company));
+});
+
+pagesRouter.get('/company/reservations', authMiddleware, requireRole('company', 'operator'), async (c) => {
+  const user = c.get('user') as JwtPayload;
+  const company = await getUserData(c.env.DB, user);
+  return c.html(companyReservationsPage(company));
 });
 
 // ========== 企业端 ==========
