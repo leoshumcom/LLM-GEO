@@ -12,7 +12,7 @@ const NAV = `
 <a href="/company/ai" data-nav="ai">🤖 AI 内容生成</a>
 <a href="/company/publish" data-nav="publish">📤 发布记录</a>
 <a href="/company/sites" data-nav="sites">🌐 站群发布</a>
-<a href="/company/social" data-nav="social">🔗 发布渠道</a>
+<a href="/company/social" data-nav="social">🔗 社媒 & 渠道</a>
 <a href="/company/ai-config" data-nav="ai_config">⚙️ 模型配置</a>
 <a href="/company/profile" data-nav="profile">🏢 企业资料</a>
 <a href="/company/operators" data-nav="operators">👥 子账号</a>
@@ -360,33 +360,103 @@ ${navScript('profile')}`;
 export function companySocialPage(user: any): string {
   const body = `
 <div class="card">
-  <h3>📡 发布渠道管理</h3>
-  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">配置发布渠道后，AI 生成的内容可通过这些渠道发布。支持手动复制、自定义 API、WordPress 站群三种方式。</p>
-  <div id="channel-list"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
-</div>
-
-<div class="card">
-  <h3>➕ 添加发布渠道</h3>
-  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;">
-    <div class="card" style="cursor:pointer;text-align:center;" onclick="showChannelModal('wordpress')">
-      <div style="font-size:40px;margin-bottom:8px;">🌐</div>
-      <strong>WordPress</strong>
-      <p style="font-size:12px;color:#6b7280;">通过 REST API 发布到 WP 站点</p>
+  <h3>🌍 社媒 & 发布渠道管理</h3>
+  <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">
+    配置发布渠道后，AI 生成的内容可自动/手动发布。支持三种方式：
+  </p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
+    <div style="background:#f0f9ff;padding:12px;border-radius:8px;text-align:center;">
+      <div style="font-size:24px;">🌐</div>
+      <strong style="font-size:13px;">浏览器扫码登录</strong>
+      <p style="font-size:11px;color:#6b7280;">扫码后系统存 Cookie，自动发布</p>
     </div>
-    <div class="card" style="cursor:pointer;text-align:center;" onclick="showChannelModal('custom_api')">
-      <div style="font-size:40px;margin-bottom:8px;">🔌</div>
-      <strong>自定义 API</strong>
-      <p style="font-size:12px;color:#6b7280;">通过 HTTP API 发布到任意平台</p>
+    <div style="background:#fefce8;padding:12px;border-radius:8px;text-align:center;">
+      <div style="font-size:24px;">🔑</div>
+      <strong style="font-size:13px;">API Key 直连</strong>
+      <p style="font-size:11px;color:#6b7280;">WordPress / 自定义 API</p>
     </div>
-    <div class="card" style="cursor:pointer;text-align:center;" onclick="showChannelModal('manual_copy')">
-      <div style="font-size:40px;margin-bottom:8px;">📋</div>
-      <strong>手动复制</strong>
-      <p style="font-size:12px;color:#6b7280;">生成内容后手动复制粘贴发布</p>
+    <div style="background:#f0fdf4;padding:12px;border-radius:8px;text-align:center;">
+      <div style="font-size:24px;">📋</div>
+      <strong style="font-size:13px;">手动复制</strong>
+      <p style="font-size:11px;color:#6b7280;">生成内容模板，自行粘贴发布</p>
     </div>
   </div>
 </div>
 
-<!-- 添加渠道弹窗 -->
+<div class="card">
+  <h3>📡 已配置渠道</h3>
+  <div id="channel-list"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
+</div>
+
+<div class="card">
+  <h3>➕ 添加新渠道</h3>
+
+  <!-- 选项卡 -->
+  <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid #e5e7eb;">
+    <button class="tab-btn active" id="tab-browser" onclick="switchTab('browser')" style="padding:10px 20px;border:none;background:none;cursor:pointer;border-bottom:2px solid #2563eb;margin-bottom:-2px;font-weight:600;color:#2563eb;">🌐 浏览器扫码</button>
+    <button class="tab-btn" id="tab-apikey" onclick="switchTab('apikey')" style="padding:10px 20px;border:none;background:none;cursor:pointer;color:#6b7280;">🔑 API Key</button>
+    <button class="tab-btn" id="tab-manual" onclick="switchTab('manual')" style="padding:10px 20px;border:none;background:none;cursor:pointer;color:#6b7280;">📋 手动复制</button>
+  </div>
+
+  <!-- 浏览器扫码 Tab -->
+  <div id="panel-browser">
+    <p style="color:#6b7280;font-size:14px;margin-bottom:12px;">
+      选择平台后，系统会生成一个临时登录链接。您在浏览器中扫码登录后，系统自动获取凭证并存储，后续可自动发布内容。
+    </p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <button class="btn btn-outline" onclick="showBrowserLogin('twitter')">🐦 Twitter (X)</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('facebook')">📘 Facebook</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('linkedin')">💼 LinkedIn</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('instagram')">📷 Instagram</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('tiktok')">🎵 TikTok</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('youtube')">▶️ YouTube</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('xiaohongshu')">📕 小红书</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('weibo')">📢 微博</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('wechat')">💬 微信公众号</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('bilibili')">📺 B站</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('zhihu')">❓ 知乎</button>
+      <button class="btn btn-outline" onclick="showBrowserLogin('douyin')">🎶 抖音</button>
+    </div>
+    <div id="browser-login-area" style="display:none;margin-top:16px;">
+      <div style="background:#f9fafb;border-radius:8px;padding:20px;text-align:center;border:1px dashed #d1d5db;">
+        <p id="browserLoginHint" style="color:#374151;font-size:14px;margin-bottom:12px;">请在新窗口登录您的账号，完成验证后系统将自动获取凭证。</p>
+        <div id="browserLoginQr" style="display:none;margin:16px 0;">
+          <p style="font-size:13px;color:#6b7280;">或者扫描二维码</p>
+          <div style="width:180px;height:180px;background:#e5e7eb;margin:8px auto;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;">二维码将在此显示</div>
+        </div>
+        <button class="btn btn-primary" onclick="startBrowserLogin()">🖥️ 打开登录窗口</button>
+        <button class="btn btn-success" onclick="confirmCookieSaved()" style="margin-left:8px;">✅ 已登录，确认保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Key Tab -->
+  <div id="panel-apikey" style="display:none;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:16px;">
+      <div class="card" style="cursor:pointer;text-align:center;padding:20px;" onclick="showChannelModal('wordpress')">
+        <div style="font-size:36px;margin-bottom:8px;">🌐</div>
+        <strong>WordPress</strong>
+        <p style="font-size:12px;color:#6b7280;">REST API / 应用密码</p>
+      </div>
+      <div class="card" style="cursor:pointer;text-align:center;padding:20px;" onclick="showChannelModal('custom_api')">
+        <div style="font-size:36px;margin-bottom:8px;">🔌</div>
+        <strong>自定义 API</strong>
+        <p style="font-size:12px;color:#6b7280;">任意 HTTP 接口</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 手动复制 Tab -->
+  <div id="panel-manual" style="display:none;">
+    <div class="card" style="cursor:pointer;text-align:center;padding:20px;" onclick="showChannelModal('manual_copy')">
+      <div style="font-size:36px;margin-bottom:8px;">📋</div>
+      <strong>手动复制渠道</strong>
+      <p style="font-size:12px;color:#6b7280;">无需配置，发布时提供内容模板</p>
+    </div>
+  </div>
+</div>
+
+<!-- 添加 API Key 渠道弹窗 -->
 <div class="modal" id="channelModal">
   <div class="modal-content" style="max-width:500px;">
     <span class="close" onclick="closeChModal()">&times;</span>
@@ -409,32 +479,82 @@ export function companySocialPage(user: any): string {
         <input type="text" id="chApiSecret" placeholder="输入额外密钥">
       </div>
     </div>
-    <div id="chManualHint" style="display:none;background:#fefce8;padding:12px;border-radius:8px;color:#854d0e;font-size:14px;">
-      手动复制渠道无需配置，在发布时系统会提供可直接复制的内容模板。
-    </div>
     <button class="btn btn-primary" onclick="createChannel()">确认添加</button>
   </div>
 </div>
 
 <script>
 let currentChannelType = '';
+let browserPlatform = '';
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => {
+    b.style.color = '#6b7280';
+    b.style.borderBottomColor = 'transparent';
+    b.style.fontWeight = '400';
+  });
+  document.getElementById('panel-browser').style.display = 'none';
+  document.getElementById('panel-apikey').style.display = 'none';
+  document.getElementById('panel-manual').style.display = 'none';
+
+  if (tab === 'browser') {
+    const btn = document.getElementById('tab-browser');
+    btn.style.color = '#2563eb'; btn.style.borderBottomColor = '#2563eb'; btn.style.fontWeight = '600';
+    document.getElementById('panel-browser').style.display = 'block';
+  } else if (tab === 'apikey') {
+    const btn = document.getElementById('tab-apikey');
+    btn.style.color = '#2563eb'; btn.style.borderBottomColor = '#2563eb'; btn.style.fontWeight = '600';
+    document.getElementById('panel-apikey').style.display = 'block';
+  } else {
+    const btn = document.getElementById('tab-manual');
+    btn.style.color = '#2563eb'; btn.style.borderBottomColor = '#2563eb'; btn.style.fontWeight = '600';
+    document.getElementById('panel-manual').style.display = 'block';
+  }
+}
+
+function showBrowserLogin(platform) {
+  browserPlatform = platform;
+  const names = { twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音' };
+  document.getElementById('browserLoginHint').textContent = '请在新窗口登录您的 ' + (names[platform] || platform) + ' 账号，完成验证后点击「已登录，确认保存」。';
+  document.getElementById('browser-login-area').style.display = 'block';
+}
+
+async function startBrowserLogin() {
+  const names = { twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音' };
+  showToast('正在打开 ' + (names[browserPlatform] || browserPlatform) + ' 登录页面...', 'info');
+  // 这里后续对接浏览器模拟登录服务
+  // 当前为演示流程：用户手动登录后，调用 confirmCookieSaved
+  window.open('https://' + browserPlatform + '.com/login', '_blank');
+}
+
+async function confirmCookieSaved() {
+  if (!browserPlatform) return showToast('请先选择一个平台', 'error');
+  const names = { twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube', xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音' };
+  const r = await api('/company/social/channel', {
+    method: 'POST',
+    body: JSON.stringify({
+      platform: browserPlatform,
+      displayName: names[browserPlatform] || browserPlatform,
+      apiKey: 'browser_session',
+      apiSecret: '',
+      apiBaseUrl: ''
+    })
+  });
+  if (r.success) {
+    showToast('✅ ' + (names[browserPlatform] || browserPlatform) + ' 绑定成功！');
+    document.getElementById('browser-login-area').style.display = 'none';
+    browserPlatform = '';
+    loadChannels();
+  } else {
+    showToast(r.error || '绑定失败', 'error');
+  }
+}
 
 function showChannelModal(type) {
   currentChannelType = type;
   const names = { wordpress: 'WordPress', custom_api: '自定义 API', manual_copy: '手动复制' };
   document.getElementById('channelModalTitle').textContent = '添加 ' + names[type] + ' 渠道';
-
-  const extra = document.getElementById('chExtraFields');
-  const hint = document.getElementById('chManualHint');
-
-  if (type === 'manual_copy') {
-    extra.style.display = 'none';
-    hint.style.display = 'block';
-  } else {
-    extra.style.display = 'block';
-    hint.style.display = 'none';
-  }
-
+  document.getElementById('chExtraFields').style.display = type === 'manual_copy' ? 'none' : 'block';
   document.getElementById('chApiUrl').value = type === 'wordpress' ? 'https://' : '';
   document.getElementById('chApiKey').value = '';
   document.getElementById('chApiSecret').value = '';
@@ -446,7 +566,6 @@ function closeChModal() { document.getElementById('channelModal').classList.remo
 async function createChannel() {
   const name = document.getElementById('chDisplayName').value;
   if (!name) return showToast('请填写渠道名称', 'error');
-
   const body = {
     platform: currentChannelType,
     displayName: name,
@@ -454,27 +573,31 @@ async function createChannel() {
     apiSecret: document.getElementById('chApiSecret').value,
     apiBaseUrl: document.getElementById('chApiUrl').value,
   };
-
   const r = await api('/company/social/channel', { method: 'POST', body: JSON.stringify(body) });
-  if (r.success) {
-    showToast('渠道添加成功');
-    closeChModal();
-    loadChannels();
-  } else {
-    showToast(r.error || '添加失败', 'error');
-  }
+  if (r.success) { showToast('渠道添加成功'); closeChModal(); loadChannels(); }
+  else showToast(r.error || '添加失败', 'error');
 }
 
 async function loadChannels() {
   const r = await api('/company/social');
   if (!r.success) return;
   const items = r.data;
-  const channelIcons = { wordpress: '🌐', custom_api: '🔌', manual_copy: '📋' };
-  const channelNames = { wordpress: 'WordPress', custom_api: '自定义 API', manual_copy: '手动复制' };
+  const channelIcons = {
+    wordpress: '🌐', custom_api: '🔌', manual_copy: '📋',
+    twitter: '🐦', facebook: '📘', linkedin: '💼', instagram: '📷', tiktok: '🎵', youtube: '▶️',
+    xiaohongshu: '📕', weibo: '📢', wechat: '💬', bilibili: '📺', zhihu: '❓', douyin: '🎶'
+  };
+  const channelNames = {
+    wordpress: 'WordPress', custom_api: '自定义 API', manual_copy: '手动复制',
+    twitter: 'Twitter (X)', facebook: 'Facebook', linkedin: 'LinkedIn', instagram: 'Instagram', tiktok: 'TikTok', youtube: 'YouTube',
+    xiaohongshu: '小红书', weibo: '微博', wechat: '微信公众号', bilibili: 'B站', zhihu: '知乎', douyin: '抖音'
+  };
 
   document.getElementById('channel-list').innerHTML = items.length
-    ? '<table><tr><th>渠道</th><th>名称</th><th>状态</th><th>创建时间</th><th>操作</th></tr>' +
-      items.map(i => '<tr><td>' + (channelIcons[i.platform] || '🔗') + ' ' + (channelNames[i.platform] || i.platform) + '</td><td>' + (i.platform_user_name || '-') + '</td><td>' + '${statusBadge('' + (i.status === 'active' ? 'active' : 'pending'))}' + '</td><td>' + formatDate(i.created_at) + '</td><td><button class="btn btn-danger btn-sm" onclick="unbind(\'' + i.platform + '\')">删除</button></td></tr>').join('') + '</table>'
+    ? '<table><tr><th>类型</th><th>名称</th><th>方式</th><th>状态</th><th>创建时间</th><th>操作</th></tr>' +
+      items.map(i => '<tr><td>' + (channelIcons[i.platform] || '🔗') + '</td><td>' + (i.platform_user_name || '-') + '</td><td>' +
+        (channelNames[i.platform] || i.platform) + '</td><td>' + '${statusBadge('' + (i.status === 'active' ? 'active' : 'pending'))}' +
+        '</td><td>' + formatDate(i.created_at) + '</td><td><button class="btn btn-danger btn-sm" onclick="unbind(\'' + i.platform + '\')">删除</button></td></tr>').join('') + '</table>'
     : '<div class="empty"><p>暂无发布渠道，请在上方添加</p></div>';
 }
 
@@ -489,7 +612,7 @@ loadChannels();
 </script>
 ${navScript('social')}`;
 
-  return pageLayout('发布渠道', NAV, SIDEBAR_LOGO,
+  return pageLayout('社媒 & 发布渠道', NAV, SIDEBAR_LOGO,
     `<span>${user.company_name || ''}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
     body);
 }

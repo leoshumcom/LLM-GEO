@@ -614,7 +614,9 @@ companyRouter.post('/social/channel', async (c) => {
       return c.json({ success: false, error: '请填写平台名称和显示名称' } as ApiResponse, 400);
     }
 
-    const validPlatforms = ['wordpress', 'custom_api', 'manual_copy'];
+    const validPlatforms = ['wordpress', 'custom_api', 'manual_copy',
+      'twitter', 'facebook', 'linkedin', 'instagram', 'tiktok', 'youtube',
+      'xiaohongshu', 'weibo', 'wechat', 'bilibili', 'zhihu', 'douyin'];
     if (!validPlatforms.includes(platform)) {
       return c.json({ success: false, error: '无效平台类型，仅支持: wordpress, custom_api, manual_copy' } as ApiResponse, 400);
     }
