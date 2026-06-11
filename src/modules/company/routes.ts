@@ -200,6 +200,7 @@ companyRouter.delete('/keywords/:id', async (c) => {
 
 // POST /api/company/ai/generate - 提交 AI 生成任务
 // Body: { keywordIds: string[], provider?: string }
+// 模型选择逻辑：优先企业自有 Key → 次选平台加油包 → 拒绝生成
 companyRouter.post('/ai/generate', async (c) => {
   try {
     const user = c.get('user');
@@ -214,22 +215,28 @@ companyRouter.post('/ai/generate', async (c) => {
 
     // 检查企业信息
     const company = await c.env.DB.prepare(
-      `SELECT company_name, brand_name, website, contact_email, contact_phone, ai_package_expires_at, ai_package_type
+      `SELECT company_name, brand_name, website, contact_email, contact_phone
        FROM sys_company WHERE tenant_id = ?`
     ).bind(user.tenantId).first<{
       company_name: string; brand_name: string; website: string;
       contact_email: string; contact_phone: string;
-      ai_package_expires_at: string | null; ai_package_type: string | null;
     }>();
 
     if (!company) {
       return c.json({ success: false, error: '企业信息不存在' } as ApiResponse, 404);
     }
 
-    // 检查 AI 套餐是否过期（如果没有套餐也能用，记录但不拦截）
-    const hasPackage = company.ai_package_type && company.ai_package_type !== 'none';
-    const packageExpired = company.ai_package_expires_at &&
-      new Date(company.ai_package_expires_at) < new Date();
+    // ===== 多模型路由检查：企业自有 Key → 平台加油包 → 拒绝 =====
+    const { checkAiAccess } = await import('../../utils/model-router');
+    const access = await checkAiAccess(c.env.DB, user.tenantId!);
+
+    if (!access.canGenerate) {
+      return c.json({
+        success: false,
+        error: access.message,
+        _hint: '请前往「模型配置」配置自有 API Key，或购买平台加油包（¥66/天 或 ¥666/月）'
+      } as ApiResponse, 403);
+    }
 
     // 获取关键词信息并创建任务
     const tasks: { keywordId: string; keyword: string }[] = [];
@@ -250,6 +257,7 @@ companyRouter.post('/ai/generate', async (c) => {
 
     // 创建生成记录
     const contentIds: string[] = [];
+    const actualProvider = provider || access.provider || 'agnes';
 
     for (const task of tasks) {
       const contentId = crypto.randomUUID();
@@ -263,7 +271,7 @@ companyRouter.post('/ai/generate', async (c) => {
         contentId, user.tenantId, task.keywordId, task.keyword,
         company.brand_name, company.website,
         `${company.contact_email} | ${company.contact_phone || ''}`,
-        provider || 'deepseek'
+        access.provider || actualProvider
       ).run();
 
       // 标记关键词为生成中
@@ -282,18 +290,17 @@ companyRouter.post('/ai/generate', async (c) => {
           brandWebsite: company.website,
           contactInfo: `${company.contact_email} | ${company.contact_phone || ''}`,
           modelType: 'text',
-          provider: provider || 'deepseek',
+          provider: access.provider || actualProvider,
         });
       } catch (qe) {
         console.error('Queue send failed:', qe);
-        // 队列失败不影响任务创建
       }
     }
 
     return c.json({
       success: true,
-      data: { contentIds, count: contentIds.length },
-      message: `已提交 ${contentIds.length} 个生成任务`,
+      data: { contentIds, count: contentIds.length, actualProvider: access.provider },
+      message: `已提交 ${contentIds.length} 个生成任务（${access.message}）`,
     });
   } catch (e: any) {
     console.error('AI generate error:', e);

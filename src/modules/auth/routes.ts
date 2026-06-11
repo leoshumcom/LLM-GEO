@@ -145,12 +145,16 @@ authRouter.post('/register', async (c) => {
     const passwordHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
     // 插入企业记录
-    // 开户赠送 AI 免费试用 3 天
-    // membership 改为一年 (365天)
-    // AI 套餐赠送 daily 类型，3天有效期
+    // membership 一年 (365天)
+    // AI 免费试用天数从 system_config 读取（默认 7 天）
+    const trialDays = await c.env.DB.prepare(
+      `SELECT config_value FROM system_config WHERE config_key = 'ai_free_trial_days'`
+    ).first<{ config_value: string }>();
+    const freeTrialDays = parseInt(trialDays?.config_value || '7');
+
     await c.env.DB.prepare(
       `INSERT INTO sys_company (id, tenant_id, company_name, brand_name, website, contact_email, contact_phone, password_hash, registration_type, registration_fee, membership_expires_at, ai_package_type, ai_package_expires_at, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'self', 168800, datetime('now', '+365 days'), 'daily', datetime('now', '+3 days'), 'active', datetime('now'), datetime('now'))`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'self', 168800, datetime('now', '+365 days'), 'daily', datetime('now', '+${freeTrialDays} days'), 'active', datetime('now'), datetime('now'))`
     ).bind(
       userId, tenantId, companyName, brandName || companyName,
       website || '', email, phone || '', passwordHash

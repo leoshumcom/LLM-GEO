@@ -35,72 +35,239 @@ document.querySelectorAll('.sidebar nav a').forEach(a => {
 
 // ===== Dashboard =====
 export function companyDashboardPage(user: any, stats: any): string {
+  // 计算 AI 套餐倒计时
+  const aiExpiry = user.ai_package_expires_at ? new Date(user.ai_package_expires_at) : null;
+  const now = new Date();
+  const aiDaysLeft = aiExpiry ? Math.max(0, Math.ceil((aiExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))) : 0;
+  const hasAi = user.ai_package_type && user.ai_package_type !== 'none';
+  const aiProgress = hasAi && aiExpiry ? Math.min(100, (aiDaysLeft / 365) * 100) : 0;
+
   const body = `
-<div class="stats">
-  <div class="stat"><div class="label">关键词总数</div><div class="value">${stats.totalKeywords || 0}</div><div class="sub">待处理 ${stats.pendingKeywords || 0}</div></div>
-  <div class="stat"><div class="label">已生成内容</div><div class="value">${stats.generatedContents || 0}</div><div class="sub">已发布 ${stats.publishedCount || 0}</div></div>
-  <div class="stat"><div class="label">已绑定社媒</div><div class="value">${stats.socialCount || 0}</div></div>
-  <div class="stat"><div class="label">会员状态</div><div class="value">${user.ai_package_type && user.ai_package_type !== 'none' ? '✅' : '❌'}</div><div class="sub">${user.membership_expires_at ? '到期: ' + new Date(user.membership_expires_at).toLocaleDateString() : '未开通'}</div></div>
-</div>
+<style>
+.dashboard-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:16px; margin-bottom:24px; }
+.dash-card { background:#1f2937; border-radius:12px; padding:20px; border:1px solid #374151; }
+.dash-card .label { color:#9ca3af; font-size:13px; margin-bottom:4px; }
+.dash-card .value { color:#f9fafb; font-size:28px; font-weight:700; }
+.dash-card .sub { color:#6b7280; font-size:12px; margin-top:4px; }
+.dash-card.accent { border-left:3px solid #2563eb; }
+.dash-card.warn { border-left:3px solid #f59e0b; }
+.dash-card.success { border-left:3px solid #10b981; }
+.chart-container { background:#1f2937; border-radius:12px; padding:20px; border:1px solid #374151; margin-bottom:16px; }
+.chart-container h3 { margin:0 0 16px 0; font-size:15px; color:#e5e7eb; display:flex; align-items:center; gap:8px; }
+.chart-row { display:flex; gap:12px; align-items:flex-end; min-height:120px; }
+.chart-bar-wrapper { flex:1; display:flex; flex-direction:column; align-items:center; }
+.chart-bar { width:100%; max-width:48px; border-radius:4px 4px 0 0; min-height:6px; transition:height 0.3s; }
+.chart-bar:hover { opacity:0.8; }
+.chart-label { font-size:11px; color:#9ca3af; margin-top:6px; }
+.chart-count { font-size:13px; font-weight:600; color:#e5e7eb; margin-bottom:4px; }
+.progress-bar { height:8px; background:#374151; border-radius:4px; overflow:hidden; margin:8px 0; }
+.progress-fill { height:100%; border-radius:4px; transition:width 0.5s; }
+.link-entry { display:flex; align-items:center; gap:8px; padding:10px 14px; background:#374151; border-radius:8px; margin-bottom:6px; cursor:pointer; }
+.link-entry:hover { background:#4b5563; }
+.link-entry .domain { color:#2563eb; font-size:13px; flex:1; }
+.link-entry .url { color:#9ca3af; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:200px; }
+.action-buttons { display:flex; gap:10px; flex-wrap:wrap; }
+.action-btn { display:flex; align-items:center; gap:6px; padding:10px 18px; border-radius:8px; font-size:14px; font-weight:500; cursor:pointer; text-decoration:none; }
+.action-btn.primary { background:#2563eb; color:#fff; }
+.action-btn.success { background:#10b981; color:#fff; }
+.action-btn.outline { background:transparent; border:1px solid #374151; color:#e5e7eb; }
+.action-btn:hover { opacity:0.85; }
+.empty-chart { display:flex; align-items:center; justify-content:center; min-height:120px; color:#6b7280; font-size:14px; }
+</style>
 
-<div class="card">
-  <h3>📊 发布量趋势（近7天）</h3>
-  <div id="publish-trend" style="min-height:80px;"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
-</div>
-
-<div class="card">
-  <h3>快速操作</h3>
-  <div style="display:flex;gap:12px;flex-wrap:wrap;">
-    <a href="/company/keywords" class="btn btn-primary">➕ 添加关键词</a>
-    <a href="/company/ai" class="btn btn-success">🤖 AI 生成内容</a>
-    <a href="/company/social" class="btn btn-outline">🔗 绑定社媒</a>
-    <a href="/company/publish" class="btn btn-outline">🔗 外链集合</a>
+<!-- 统计卡片 -->
+<div class="dashboard-grid">
+  <div class="dash-card accent">
+    <div class="label">🔑 关键词总数</div>
+    <div class="value">${stats.totalKeywords || 0}</div>
+    <div class="sub">待处理 ${stats.pendingKeywords || 0}</div>
+  </div>
+  <div class="dash-card success">
+    <div class="label">📄 已生成内容</div>
+    <div class="value">${stats.generatedContents || 0}</div>
+    <div class="sub">已发布 ${stats.publishedCount || 0}</div>
+  </div>
+  <div class="dash-card">
+    <div class="label">🔗 已绑定社媒</div>
+    <div class="value">${stats.socialCount || 0}</div>
+    <div class="sub">16个平台可配置</div>
+  </div>
+  <div class="dash-card warn">
+    <div class="label">🤖 AI 套餐</div>
+    <div class="value">${hasAi ? (aiDaysLeft > 0 ? '⏳ ' + aiDaysLeft + '天' : '⚠️ 已过期') : '❌ 未开通'}</div>
+    <div class="sub">${hasAi ? (user.ai_package_expires_at ? '到期 ' + new Date(user.ai_package_expires_at).toLocaleDateString() : '') : (user.membership_expires_at ? '会员至 ' + new Date(user.membership_expires_at).toLocaleDateString() : '')}
+    </div>
   </div>
 </div>
 
-<div class="card">
-  <h3>最近生成记录</h3>
-  <div id="recent-contents"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:16px;">
+  <!-- 左侧：发布量趋势 -->
+  <div class="chart-container">
+    <h3>📊 发布量趋势 <span id="trend-period-toggle" style="cursor:pointer;font-size:12px;color:#6b7280;font-weight:400;">7天▾</span></h3>
+    <div id="publish-trend"><div class="empty-chart"><span>⏳ 加载中...</span></div></div>
+  </div>
+
+  <!-- 右侧：关键词状态 -->
+  <div class="chart-container">
+    <h3>🔵 关键词状态</h3>
+    <div id="keyword-ring"><div class="empty-chart"><span>⏳ 加载中...</span></div></div>
+  </div>
+</div>
+
+<!-- 快速操作 -->
+<div class="chart-container">
+  <h3>⚡ 快速操作</h3>
+  <div class="action-buttons">
+    <a href="/company/keywords" class="action-btn primary">➕ 添加关键词</a>
+    <a href="/company/ai" class="action-btn success">🤖 AI 生成内容</a>
+    <a href="/company/social" class="action-btn outline">🔗 绑定社媒</a>
+    <a href="/company/ai-config" class="action-btn outline" style="border-color:#f59e0b;">⚙️ 模型配置</a>
+    <a href="/company/packages" class="action-btn outline" style="border-color:#10b981;">💳 购买套餐</a>
+  </div>
+</div>
+
+<!-- AI 套餐倒计时 -->
+<div class="chart-container">
+  <h3>⏱️ AI 套餐状态</h3>
+  ${hasAi && aiDaysLeft > 0 ? `
+  <div style="display:flex;align-items:center;gap:16px;">
+    <div style="flex:1;">
+      <div style="display:flex;justify-content:space-between;font-size:13px;color:#e5e7eb;margin-bottom:4px;">
+        <span>${user.ai_package_type === 'daily' ? '日套餐' : '月套餐'}</span>
+        <span>剩余 ${aiDaysLeft} 天</span>
+      </div>
+      <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(100, (aiDaysLeft / 30) * 100)}%;background:${aiDaysLeft > 7 ? '#10b981' : aiDaysLeft > 3 ? '#f59e0b' : '#ef4444'};"></div></div>
+    </div>
+    <a href="/company/packages" class="action-btn outline" style="flex-shrink:0;padding:8px 16px;font-size:13px;">💳 续费</a>
+  </div>
+  ` : `
+  <p style="color:#9ca3af;font-size:14px;">${hasAi ? 'AI 套餐已过期，请续费或配置自有 Key' : '尚未开通 AI 套餐'}</p>
+  <a href="/company/packages" class="action-btn success" style="display:inline-flex;margin-top:8px;">💳 购买套餐</a>
+  `}
+</div>
+
+<!-- 外链集合 -->
+<div class="chart-container">
+  <h3>🔗 外链集合 <span style="font-size:12px;color:#6b7280;font-weight:400;">最近10条</span></h3>
+  <div id="link-collection"><div class="empty-chart"><span>⏳ 加载中...</span></div></div>
+</div>
+
+<!-- 最近生成记录 -->
+<div class="chart-container">
+  <h3>📝 最近生成记录</h3>
+  <div id="recent-contents"><div class="empty-chart"><span>⏳ 加载中...</span></div></div>
 </div>
 
 <script>
-(async () => {
-  // 发布趋势
-  const pr = await api('/company/publish?pageSize=100');
-  if (pr.success) {
+(function() {
+  let trendDays = 7;
+
+  async function loadTrend() {
+    const pr = await api('/company/publish?pageSize=200');
+    if (!pr.success) return;
     const items = pr.data.items || [];
-    // 按日期统计
+
+    // 生成近7/30天的日期序列
+    const days = [];
+    for (let i = trendDays - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      days.push(d.toLocaleDateString('zh-CN'));
+    }
+
+    // 统计每天发布数
     const trend = {};
-    const dayNames = {0:'周日',1:'周一',2:'周二',3:'周三',4:'周四',5:'周五',6:'周六'};
     items.forEach(i => {
       if (i.published_at) {
-        const d = new Date(i.published_at);
-        const key = d.toLocaleDateString('zh-CN');
+        const key = new Date(i.published_at).toLocaleDateString('zh-CN');
         trend[key] = (trend[key] || 0) + 1;
       }
     });
-    const entries = Object.entries(trend).sort((a,b) => a[0].localeCompare(b[0])).slice(-7);
-    document.getElementById('publish-trend').innerHTML = entries.length
-      ? '<div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;">' +
-        entries.map(([date, count]) => '<div style="text-align:center;"><div style="background:#2563eb;width:40px;height:' + (Math.max(20, count * 25)) + 'px;border-radius:4px 4px 0 0;margin:0 auto;"></div><div style="font-size:13px;font-weight:600;margin-top:4px;">' + count + '</div><div style="font-size:11px;color:#6b7280;">' + date.slice(5) + '</div></div>').join('') +
-        '</div>'
-      : '<div class="empty"><p>暂无发布数据</p></div>';
+
+    const maxCount = Math.max(1, ...days.map(d => trend[d] || 0));
+    const container = document.getElementById('publish-trend');
+
+    if (days.length === 0 || maxCount === 0) {
+      container.innerHTML = '<div class="empty-chart"><span>暂无发布数据</span></div>';
+      return;
+    }
+
+    container.innerHTML = '<div class="chart-row">' +
+      days.map(d => {
+        const count = trend[d] || 0;
+        const height = Math.max(6, (count / maxCount) * 100);
+        return '<div class="chart-bar-wrapper"><div class="chart-count">' + count + '</div><div class="chart-bar" style="height:' + height + 'px;background:' + (count > 0 ? (count >= maxCount * 0.7 ? '#10b981' : '#2563eb') : '#374151') + ';"></div><div class="chart-label">' + d.slice(5) + '</div></div>';
+      }).join('') + '</div>';
+
+    // 切换按钮
+    const toggle = document.getElementById('trend-period-toggle');
+    if (toggle) {
+      toggle.onclick = () => {
+        trendDays = trendDays === 7 ? 30 : 7;
+        toggle.textContent = trendDays + '天▾';
+        loadTrend();
+      };
+    }
   }
 
-  // 最近生成
-  const r = await api('/company/ai/generate?pageSize=5');
-  if (r.success && r.data.items.length > 0) {
-    document.getElementById('recent-contents').innerHTML = '<table><tr><th>关键词</th><th>状态</th><th>时间</th></tr>' +
-      r.data.items.map(i => '<tr><td>' + (i.title || i.keyword) + '</td><td>${statusBadge('${i.status}')}</td><td>' + formatDate(i.created_at) + '</td></tr>').join('') + '</table>';
-  } else {
-    document.getElementById('recent-contents').innerHTML = '${emptyState('📝', '还没有生成记录，去添加关键词开始吧')}';
+  async function loadKeywordRing() {
+    const r = await api('/company/keywords?pageSize=1000');
+    if (!r.success) return;
+    const items = r.data.items || [];
+    const total = items.length;
+    const pending = items.filter(i => i.status === 'pending').length;
+    const generating = items.filter(i => i.status === 'generating').length;
+    const generated = items.filter(i => i.status === 'generated').length;
+    const failed = items.filter(i => i.status === 'failed').length;
+
+    const pct = (n) => total ? Math.round((n / total) * 100) : 0;
+
+    document.getElementById('keyword-ring').innerHTML = total > 0
+      ? '<div style="margin-bottom:12px;"><div style="display:flex;gap:8px;flex-wrap:wrap;">' +
+        '<span style="font-size:13px;color:#f59e0b;">待处理 ' + pending + '（' + pct(pending) + '%）</span>' +
+        '<span style="font-size:13px;color:#2563eb;">生成中 ' + generating + '（' + pct(generating) + '%）</span>' +
+        '<span style="font-size:13px;color:#10b981;">已完成 ' + generated + '（' + pct(generated) + '%）</span>' +
+        '<span style="font-size:13px;color:#ef4444;">失败 ' + failed + '（' + pct(failed) + '%）</span>' +
+        '</div></div>' +
+        // 迷你进度条组
+        '<div class="progress-bar" style="height:12px;"><div class="progress-fill" style="width:' + pct(pending) + '%;background:#f59e0b;float:left;"></div><div class="progress-fill" style="width:' + pct(generating) + '%;background:#2563eb;float:left;"></div><div class="progress-fill" style="width:' + pct(generated) + '%;background:#10b981;float:left;"></div><div class="progress-fill" style="width:' + pct(failed) + '%;background:#ef4444;float:left;"></div></div>' +
+        '<p style="color:#6b7280;font-size:13px;margin-top:8px;">关键词总数: ' + total + '</p>'
+      : '<div class="empty-chart"><span>暂无关键词，去 <a href="/company/keywords" style="color:#2563eb;">添加</a> 吧</span></div>';
   }
+
+  async function loadLinks() {
+    const r = await api('/company/publish?pageSize=10');
+    if (!r.success) return;
+    const items = r.data.items || [];
+    const validLinks = items.filter(i => i.platform_url);
+
+    document.getElementById('link-collection').innerHTML = validLinks.length > 0
+      ? validLinks.map(i => '<div class="link-entry" onclick="window.open(\'' + i.platform_url + '\',\'_blank\')"><span class="domain">' + (i.platform || '站群') + '</span><span class="url">' + i.platform_url + '</span><span style="font-size:11px;color:' + (i.status === 'published' ? '#10b981' : '#f59e0b') + ';">' + (i.status === 'published' ? '✅' : '⏳') + '</span></div>').join('')
+      : '<div class="empty-chart"><span>暂无外链数据</span></div>';
+  }
+
+  async function loadRecent() {
+    const r = await api('/company/ai/generate?pageSize=5');
+    if (!r.success) return;
+    const items = r.data.items || [];
+    document.getElementById('recent-contents').innerHTML = items.length > 0
+      ? '<table style="width:100%;"><tr><th>标题/关键词</th><th>状态</th><th>时间</th></tr>' +
+        items.map(i => '<tr><td>' + (i.title || i.keyword || '-') + '</td><td><span class="badge ' + (i.status === 'completed' ? 'badge-success' : i.status === 'pending' ? 'badge-warning' : i.status === 'failed' ? 'badge-danger' : 'badge-info') + '">' + (i.status === 'completed' ? '✅ 已完成' : i.status === 'pending' ? '⏳ 排队中' : i.status === 'failed' ? '❌ 失败' : '🔄 生成中') + '</span></td><td>' + formatDate(i.created_at) + '</td></tr>').join('') + '</table>'
+      : '<div class="empty-chart"><span>📝 还没有生成记录，去 <a href="/company/keywords" style="color:#2563eb;">添加关键词</a> 开始吧</span></div>';
+  }
+
+  loadTrend();
+  loadKeywordRing();
+  loadLinks();
+  loadRecent();
 })();
 </script>
 ${navScript('dashboard')}`;
 
   return pageLayout('数据看板', NAV, SIDEBAR_LOGO,
-    `<span>${user.company_name || ''}</span><span>${statusBadge(user.ai_package_type && user.ai_package_type !== 'none' ? 'active' : 'pending')}</span><a href="#" onclick="logout()" class="logout">退出</a>`,
+    `<span>${user.company_name || ''}</span>
+    <span style="font-size:12px;color:${hasAi && aiDaysLeft > 0 ? '#10b981' : '#ef4444'};">${hasAi && aiDaysLeft > 0 ? '🤖 ' + aiDaysLeft + '天' : '⚠️ 无AI套餐'}</span>
+    <a href="#" onclick="logout()" class="logout">退出</a>`,
     body);
 }
 
@@ -1106,7 +1273,8 @@ export function companyAiConfigPage(user: any): string {
 <div class="card">
   <h3>🤖 AI 模型配置</h3>
   <p style="color:#6b7280;font-size:14px;margin-bottom:16px;">
-    配置自定义 AI 模型 API Key。如果使用平台公共套餐则无需配置。
+    配置自定义 AI 模型 API Key 后，系统将优先使用您的 Key 进行内容生成。
+    如果未配置自有 Key，平台将使用您的 AI 套餐（加油包）。
     支持的模型厂商：
   </p>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
@@ -1115,14 +1283,20 @@ export function companyAiConfigPage(user: any): string {
     <span class="badge badge-info">通义千问</span>
     <span class="badge badge-info">ChatGPT</span>
     <span class="badge badge-info">Gemini</span>
-    <span class="badge badge-info">Agnes</span>
     <span class="badge badge-info">元宝</span>
     <span class="badge badge-info">Grok</span>
+    <span class="badge badge-info">Agnes</span>
+  </div>
+  <div style="background:#1e3a5f;border-radius:8px;padding:12px 16px;border:1px solid #2563eb;">
+    <p style="color:#93c5fd;font-size:13px;margin:0;">
+      💡 配置自己的 API Key 后，AI 生成时会优先使用您的 Key，不消耗平台加油包额度。
+      如您不配置 Key，系统将自动使用您的 AI 套餐（如有）。
+    </p>
   </div>
 </div>
 
 <div class="card">
-  <h3>模型列表</h3>
+  <h3>已配置的模型列表</h3>
   <div id="model-config-list"><div class="empty"><div class="icon">⏳</div><p>加载中...</p></div></div>
 </div>
 
@@ -1165,7 +1339,7 @@ async function loadModelConfigs() {
   document.getElementById('model-config-list').innerHTML = items.length
     ? '<table><tr><th>厂商</th><th>模型</th><th>API 地址</th><th>状态</th><th>操作</th></tr>' +
       items.map(i => '<tr><td>' + (providerNames[i.provider] || i.provider) + '</td><td>' + (i.model_name || '-') + '</td><td>' + (i.api_base_url || '默认') + '</td><td>' + '${statusBadge('active')}' + '</td><td><button class="btn btn-danger btn-sm" onclick="deleteModel(\'' + i.provider + '\')">删除</button></td></tr>').join('') + '</table>'
-    : '<div class="empty"><p>暂无自定义模型配置，使用平台公共套餐即可</p></div>';
+    : '<div class="empty"><p>暂无自定义模型配置，添加后将优先使用您的 Key</p></div>';
 }
 
 async function saveModelConfig() {

@@ -125,10 +125,15 @@ agentRouter.post('/companies', async (c) => {
       return c.json({ success: false, error: '代理商余额不足，请先充值' }, 400);
     }
 
-    // 扣减余额并创建企业（赠送 AI 3天试用 + 365天会员）
+    // 扣减余额并创建企业（赠送 AI 免费试用 + 365天会员）
+    const trialDays = await c.env.DB.prepare(
+      `SELECT config_value FROM system_config WHERE config_key = 'ai_free_trial_days'`
+    ).first<{ config_value: string }>();
+    const freeTrialDays = parseInt(trialDays?.config_value || '7');
+
     await c.env.DB.prepare(
       `INSERT INTO sys_company (id, agent_id, tenant_id, company_name, brand_name, website, contact_email, contact_phone, registration_type, registration_fee, membership_expires_at, ai_package_type, ai_package_expires_at, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'agent', ?, datetime('now', '+365 days'), 'daily', datetime('now', '+3 days'), 'active', datetime('now'), datetime('now'))`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'agent', ?, datetime('now', '+365 days'), 'daily', datetime('now', '+${freeTrialDays} days'), 'active', datetime('now'), datetime('now'))`
     ).bind(userId, user.userId, tenantId, companyName, brandName || companyName, website || '', email, phone || '', fee).run();
 
     // 扣余额

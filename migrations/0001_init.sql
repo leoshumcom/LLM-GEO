@@ -314,6 +314,6 @@ INSERT OR IGNORE INTO system_config (id, config_key, config_value, description) 
   ('cfg_company_fee_self', 'company_fee_self', '168800', '企业自主注册年费（分）'),
   ('cfg_ai_daily', 'ai_package_daily', '6600', 'AI日套餐价格（分）'),
   ('cfg_ai_monthly', 'ai_package_monthly', '66600', 'AI月套餐价格（分）'),
-  ('cfg_free_trial_days', 'ai_free_trial_days', '3', 'AI免费试用天数'),
+  ('cfg_free_trial_days', 'ai_free_trial_days', '7', 'AI免费试用天数'),
   ('cfg_reservation_fee', 'reservation_fee', '600', '增值预约费用（分）'),
   ('cfg_refund_days', 'refund_grace_days', '7', '企业注销退款宽限天数');
